@@ -128,6 +128,8 @@ export class WebDocumentChunker {
   async chunk(
     document:
       WebDocument,
+
+    signal?: AbortSignal,
   ): Promise<WebDocumentChunkingResult> {
     let segments:
       readonly MarkdownSplitSegment[];
@@ -145,6 +147,8 @@ export class WebDocumentChunker {
               document.canonicalUrl,
             title:
               document.title,
+            signal,
+
             documentContentHash:
               document.contentHash,
           },

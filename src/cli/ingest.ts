@@ -1,6 +1,10 @@
 import {
+  createHash,
   randomUUID,
 } from "node:crypto";
+
+import { StructuralMarkdownSplitter } from "../chunking/structural-markdown-splitter.js";
+import type { MarkdownSplitter } from "../chunking/markdown-splitter.js";
 
 import {
   mkdir,
@@ -192,6 +196,10 @@ function metadataMode(): MetadataMode {
 }
 
 async function loadVectorStoreAdapter(): Promise<KnowledgeBaseVectorStoreAdapter> {
+  if (process.env.AUTO_VECTOR_STORE_PROVIDER === "weaviate") {
+    const { createVectorStoreAdapter } = await import("../knowledge/weaviate-knowledge-base-adapter.js");
+    return withMarkdownSplitter(createVectorStoreAdapter());
+  }
   const modulePath = process.env.AUTO_VECTOR_STORE_ADAPTER_MODULE?.trim()
     || DEFAULT_ADAPTER_MODULE;
   const moduleUrl = pathToFileURL(
@@ -206,7 +214,7 @@ async function loadVectorStoreAdapter(): Promise<KnowledgeBaseVectorStoreAdapter
   const exportedAdapter = loadedModule.vectorStoreAdapter;
 
   if (isKnowledgeBaseVectorStoreAdapter(exportedAdapter)) {
-    return exportedAdapter;
+    return withMarkdownSplitter(exportedAdapter);
   }
 
   const factory = loadedModule.createVectorStoreAdapter;
@@ -215,13 +223,83 @@ async function loadVectorStoreAdapter(): Promise<KnowledgeBaseVectorStoreAdapter
     const createdAdapter: unknown = await factory();
 
     if (isKnowledgeBaseVectorStoreAdapter(createdAdapter)) {
-      return createdAdapter;
+      return withMarkdownSplitter(createdAdapter);
     }
   }
 
   throw new Error(
     "The adapter module must export vectorStoreAdapter or createVectorStoreAdapter() implementing name and ingest().",
   );
+}
+
+async function withMarkdownSplitter(adapter: KnowledgeBaseVectorStoreAdapter): Promise<KnowledgeBaseVectorStoreAdapter> {
+  let splitter: MarkdownSplitter = new StructuralMarkdownSplitter({
+    maxCharacters: integerEnvironmentVariable("AUTO_SPLITTER_MAX_CHARS", 6400, 1),
+  });
+  const modulePath = process.env.AUTO_MARKDOWN_SPLITTER_MODULE?.trim();
+  if (modulePath) {
+    const loaded: unknown = await import(pathToFileURL(resolve(PROJECT_ROOT, modulePath)).href);
+    if (!isRecord(loaded)) throw new TypeError("Invalid MarkdownSplitter module.");
+    const created: unknown = isAdapterFactory(loaded.createMarkdownSplitter)
+      ? await loaded.createMarkdownSplitter()
+      : loaded.markdownSplitter;
+    if (!isRecord(created) || typeof created.name !== "string" || typeof created.split !== "function") {
+      throw new TypeError("Splitter module must export markdownSplitter or createMarkdownSplitter() implementing name and split().");
+    }
+    splitter = created as unknown as MarkdownSplitter;
+  }
+  return {
+    name: `${adapter.name}:${splitter.name}`,
+    async ingest(request) {
+      const maxFiles = integerEnvironmentVariable("AUTO_MAX_KB_FILES", 100, 1);
+      const maxBytes = integerEnvironmentVariable("AUTO_MAX_KB_BYTES", 50 * 1024 * 1024, 1);
+      const maxInput = integerEnvironmentVariable("AUTO_SPLITTER_MAX_INPUT_CHARACTERS", 3_000_000, 1);
+      if (request.files.reduce((total, file) => total + file.markdown.length, 0) > maxInput) {
+        throw new RangeError("Splitter input exceeds AUTO_SPLITTER_MAX_INPUT_CHARACTERS.");
+      }
+      const files: KnowledgeBaseFile[] = [];
+      let bytes = 0;
+      for (const file of request.files) {
+        request.signal?.throwIfAborted();
+        const segments = await splitter.split(file.markdown, {
+          sourceId: String(file.metadata.source_id ?? request.namespace),
+          documentId: String(file.metadata.document_id ?? file.filename),
+          canonicalUrl: String(file.metadata.canonical_url ?? file.metadata.source_url ?? SOURCE_URL),
+          title: typeof file.metadata.title === "string" ? file.metadata.title : undefined,
+          documentContentHash: String(file.metadata.content_hash ?? ""),
+          signal: request.signal,
+        });
+        if (!segments.length) throw new Error(`Splitter produced no files for ${file.filename}.`);
+        for (const [ordinal, segment] of segments.entries()) {
+          if (!segment.markdown.trim()) throw new Error(`Splitter produced empty Markdown for ${file.filename}.`);
+          bytes += Buffer.byteLength(segment.markdown, "utf8");
+          if (files.length >= maxFiles || bytes > maxBytes) throw new RangeError("Split knowledge base exceeds AUTO_MAX_KB_FILES or AUTO_MAX_KB_BYTES.");
+          files.push({
+            filename: `${file.filename.replace(/\.md$/i, "")}--${String(ordinal + 1).padStart(4, "0")}.md`,
+            markdown: segment.markdown,
+            metadata: {
+              ...file.metadata, ...segment.metadata?.attributes,
+              source_id: file.metadata.source_id ?? request.namespace,
+              document_id: file.metadata.document_id ?? file.filename,
+              canonical_url: file.metadata.canonical_url ?? file.metadata.source_url ?? SOURCE_URL,
+              content_hash: createHash("sha256").update(segment.markdown).digest("hex"),
+              parent_content_hash: file.metadata.content_hash ?? null,
+              splitter: splitter.name, parent_filename: file.filename,
+            },
+          });
+        }
+      }
+      const directory = resolve(MARKDOWN_ROOT, "split", randomUUID());
+      await mkdir(directory, { recursive: true });
+      for (const file of files) {
+        if (file.filename.includes("/") || file.filename.includes("\\") || file.filename === "..") throw new TypeError("Unsafe generated filename.");
+        await writeFile(resolve(directory, file.filename), file.markdown, "utf8");
+      }
+      await writeFile(resolve(directory, "manifest.json"), JSON.stringify({ splitter: splitter.name, files: files.map(({ filename, metadata }) => ({ filename, metadata })) }, null, 2), "utf8");
+      console.log(`Split knowledge files: ${files.length}; manifest: ${directory}/manifest.json`);
+      return adapter.ingest({ ...request, files, ...(process.env.AUTO_VECTOR_STORE_PROVIDER === "weaviate" ? { chunking: undefined } : {}) });
+    },
+  };
 }
 
 async function loadMetadataEnricher(): Promise<KnowledgeBaseMetadataEnricher> {

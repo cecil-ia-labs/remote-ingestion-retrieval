@@ -49,6 +49,7 @@ export class DefaultVectorMetadataProjector
       DocumentChunk,
   ): VectorMetadata {
     return Object.freeze({
+      ...chunk.metadata.splitter.attributes,
       schemaVersion:
         1,
 

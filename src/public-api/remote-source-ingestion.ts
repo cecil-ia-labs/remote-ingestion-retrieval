@@ -5,6 +5,7 @@ import {
 import {
   WebDocumentChunker,
 } from "../chunking/web-document-chunker.js";
+import { StructuralMarkdownSplitter } from "../chunking/structural-markdown-splitter.js";
 
 import {
   WebsiteDiscoveryService,
@@ -198,9 +199,8 @@ function rootDiscovery(
 /**
  * Stable facade over the complete remote-source ingestion stack.
  *
- * Provider-specific concerns are reduced to the three host contracts that
- * cannot be sensibly defaulted by the library: MarkdownSplitter,
- * EmbeddingProvider and VectorStore.
+ * Embeddings and vector storage are injected; local Markdown chunking is
+ * supplied by default and may be replaced by the host's semantic splitter.
  */
 export class RemoteSourceIngestion {
   readonly services:
@@ -230,9 +230,11 @@ export class RemoteSourceIngestion {
         options.pipelineRevision,
       );
 
+    const markdownSplitter = options.markdownSplitter ?? new StructuralMarkdownSplitter();
+
     assertHostContract(
       "markdownSplitter",
-      options.markdownSplitter,
+      markdownSplitter,
       "split",
     );
 
@@ -317,7 +319,7 @@ export class RemoteSourceIngestion {
       options.chunker
       ?? new WebDocumentChunker({
         splitter:
-          options.markdownSplitter,
+          markdownSplitter,
       });
 
     const vectorIndexer =
@@ -361,6 +363,7 @@ export class RemoteSourceIngestion {
             const result =
               await chunker.chunk(
                 document,
+                signal,
               );
 
             signal?.throwIfAborted();
@@ -546,6 +549,7 @@ export class RemoteSourceIngestion {
         .chunker
         .chunk(
           request.document,
+          request.signal,
         );
 
     request.signal
