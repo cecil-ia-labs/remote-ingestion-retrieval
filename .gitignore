@@ -1,0 +1,10 @@
+data/**
+tmp/
+dist/
+node_modules/
+.env
+.env.local
+Roadmap**
+ROADMAP*
+kb/**
+

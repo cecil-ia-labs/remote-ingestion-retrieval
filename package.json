@@ -1,0 +1,57 @@
+{
+  "allowScripts": {
+    "esbuild@0.28.2": true,
+    "puppeteer@25.11.0": true
+  },
+  "dependencies": {
+    "@mozilla/readability": "^0.6.0",
+    "@truto/turndown-plugin-gfm": "^1.0.3",
+    "jsdom": "^30.0.1",
+    "puppeteer": "^25.11.0",
+    "saxes": "^6.0.0",
+    "turndown": "^7.2.4"
+  },
+  "description": "This package turns remote URLs and websites into normalized Markdown, then sends documents through chunking, host-provided embeddings, and vector storage.",
+  "devDependencies": {
+    "@types/jsdom": "^30.0.0",
+    "@types/node": "^22.0.0",
+    "@types/turndown": "^5.0.6",
+    "tsx": "^4.20.0",
+    "typescript": "^5.8.0"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./advanced": {
+      "import": "./dist/sources/index.js",
+      "types": "./dist/sources/index.d.ts"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "main": "./dist/index.js",
+  "name": "remote-ingestion-retrieval",
+  "private": true,
+  "scripts": {
+    "artifacts:clean": "rm -rf data/visual-validation",
+    "artifacts:list": "find data/visual-validation -type f \\( -name '*.md' -o -name '*.json' -o -name '*.jsonl' \\) -print 2>/dev/null || true",
+    "build": "tsc -p tsconfig.json",
+    "clean": "rm -rf dist",
+    "ingest": "node --env-file=.env --import tsx src/cli/ingest.ts",
+    "pipeline:show": "cat data/visual-validation/phase-27/source-insertion-outcomes.json 2>/dev/null || true",
+    "test": "tsx --test src/**/*.test.ts",
+    "test:compiled": "npm run build && node --test dist/sources/remote/__tests__/*.test.js dist/sources/extraction/__tests__/*.test.js dist/sources/normalization/__tests__/*.test.js dist/sources/rendering/__tests__/*.test.js dist/sources/persistence/__tests__/*.test.js dist/sources/url/__tests__/*.test.js dist/sources/filtering/__tests__/*.test.js dist/sources/scheduling/__tests__/*.test.js dist/sources/limits/__tests__/*.test.js dist/sources/errors/__tests__/*.test.js dist/sources/observability/__tests__/*.test.js dist/sources/chunking/__tests__/*.test.js dist/sources/hashing/__tests__/*.test.js dist/sources/vector/__tests__/*.test.js dist/sources/sync/__tests__/*.test.js dist/sources/discovery/__tests__/*.test.js dist/sources/website/__tests__/*.test.js dist/sources/public-api/__tests__/*.test.js dist/sources/pipeline/__tests__/*.test.js",
+    "test:watch": "tsx --test --watch src/**/*.test.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "type": "module",
+  "types": "./dist/index.d.ts",
+  "version": "0.27.0"
+}
