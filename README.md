@@ -1,520 +1,281 @@
 # Remote Ingestion Retrieval
 
-## Local runtime and manual website runs
+Biblioteca TypeScript para transformar URLs e websites em Markdown, dividir o conteúdo e inseri-lo em uma base de conhecimento. Inclui aquisição HTTP e por navegador, descoberta de páginas, metadados, limites de execução e sincronização incremental de vetores.
 
-The package's `src/index.ts` is an importable library entry point, not an
-executable. Its `.js` import specifiers target the compiled output. Running
-`node ./src/index.ts` therefore fails to resolve source modules. Build the
-package and load the compiled entry point instead:
+O pacote oferece duas formas de armazenamento:
+
+- **Vetores pré-calculados:** `RemoteSourceIngestion` recebe um `EmbeddingProvider` e um `VectorStore`. O adapter `WeaviateVectorStore` grava e exclui vetores no Weaviate, incluindo instalações próprias.
+- **Arquivos Markdown:** `KnowledgeBaseVectorStoreAdapter` recebe arquivos e metadados. O adapter `WeaviateKnowledgeBaseAdapter` divide o texto e usa os embeddings nativos do Weaviate Cloud durante a importação.
+
+Esses contratos têm responsabilidades diferentes. Uma API de upload de arquivos não precisa implementar o contrato de vetores pré-calculados.
+
+## Instalação
+
+Requer Node.js 22 ou superior.
 
 ```bash
+npm ci
 npm run build
-node --input-type=module -e "import('./dist/index.js').then(({ RemoteSourceIngestion }) => console.log(typeof RemoteSourceIngestion))"
 ```
 
-Loading the compiled entry point only verifies the library export; it does not
-contact a website. The standard `RemoteSourceIngestion` facade uses the
-`MarkdownSplitter`, `EmbeddingProvider`, and precomputed-vector `VectorStore`
-contracts. File-oriented providers such as OpenAI Vector Stores use the
-separate, provider-neutral `KnowledgeBaseVectorStoreAdapter` contract; the AAC
-Auto manual runner below uses that path.
+Para páginas que dependem de JavaScript, instale o Chrome correspondente ao Puppeteer:
 
-For callers using the precomputed-vector pipeline, `runSourceInsertion()`
-supports a bounded crawl and execution budget. Inspect its
-`completed`/`partial` result and summary:
-
-```ts
-const outcome = await ingestion.runSourceInsertion({
-  source: {
-    id: "manual-site-check",
-    type: "website",
-    url: "https://replace-with-the-site.example/",
-    createdAt: new Date(),
-    updatedAt: new Date(),
-    options: {
-      crawl: {
-        discoveryStrategy: "sitemap-and-crawl",
-        maxPages: 100,
-        maxDepth: 3,
-        concurrency: 3,
-        sameOriginOnly: true,
-      },
-    },
-  },
-  namespace: "manual-site-check",
-  materializationConcurrency: 3,
-  failurePolicy: "continue-partial",
-  limits: {
-    maxElapsedMs: 300_000,
-    maxFetchedBytes: 100 * 1024 * 1024,
-    maxChunks: 10_000,
-    maxEmbeddingInputs: 5_000,
-  },
-});
+```bash
+npx puppeteer browsers install chrome
 ```
 
-This is a caller-side example only; the library does not execute it on import.
+Em outro projeto local, instale este diretório como dependência. O nome do pacote é `remote-ingestion-retrieval`:
 
-### Manual website runner
+```bash
+npm install /caminho/para/remote-ingestion-retrieval
+```
 
-`npm run ingest` loads `.env` and runs `src/cli/ingest.ts` through `tsx`,
-currently configured for `https://academy.weaviate.io`. It materializes complete page Markdown files and
-sends them with generic per-file metadata to a file-oriented vector-store
-adapter. The adapter interface is in
-`src/knowledge/knowledge-base-vector-store.ts`; it is separate from the
-precomputed-vector `VectorStore` API.
+O entry point compilado é `dist/index.js`. Importar a biblioteca não inicia um crawl, abre o navegador nem chama providers. Para executar uma ingestão, use os exemplos abaixo ou o runner manual. Não execute `node src/index.ts`.
 
-The default OpenAI adapter is
-`../3_benchmarks/realtime-compare-mcp-x-function/MarkdownSplitter/openai-vector-store.adapter.ts`.
-It exports `createVectorStoreAdapter()` and uses `OPENAI_API_KEY` from `.env`.
-Once the user starts a run, the command is:
+## Ingestão manual com Weaviate Cloud
+
+Crie `.env` a partir de `.env.example` e configure uma fonte e uma collection:
+
+```dotenv
+SOURCE_ID=product-docs
+SOURCE_TITLE=Product documentation
+SOURCE_URL=https://docs.example.com/
+AUTO_KB_NAMESPACE=product_docs
+AUTO_VECTOR_STORE_PROVIDER=weaviate
+WEAVIATE_URL=https://your-cluster.weaviate.cloud
+WEAVIATE_API_KEY=your-cluster-api-key
+WEAVIATE_COLLECTION=ProductDocs
+WEAVIATE_EMBEDDING_MODEL=Snowflake/snowflake-arctic-embed-l-v2.0
+```
+
+Execute:
 
 ```bash
 npm run ingest
 ```
 
-For a provider with an OpenAI-compatible Files and Vector Stores API, set
-`AUTO_VECTOR_STORE_BASE_URL` to its HTTPS API base URL and
-`AUTO_VECTOR_STORE_API_KEY` to that provider's key in `.env`. The adapter
-uses this dedicated key for the compatible endpoint. Set
-`AUTO_VECTOR_STORE_PROVIDER_NAME` to label its report. A provider with a
-different API can be selected with `AUTO_VECTOR_STORE_ADAPTER_MODULE`
-pointing to a module that implements the same generic interface.
+O runner descobre páginas, materializa Markdown, enriquece os metadados, aplica o splitter e envia o resultado ao adapter. A seleção `weaviate` usa os módulos incluídos neste repositório; não depende do checkout de benchmarks.
 
-The runner saves each normalized page as a Markdown file under `kb/weaviate/`
-and writes a per-run JSON report under `data/ingestion-results/weaviate/`.
-The OpenAI adapter uploads each Markdown file with its own source, URL, title,
-language, content hash, and discovery metadata, then creates a new Vector Store
-and attaches the files with static chunking (default 1,600 tokens with 200
-tokens of overlap). Each file's attributes and persisted chunking strategy are
-read back before the adapter returns success. The report includes the created store ID and uploaded file
-IDs. Each run creates a new store, matching the supplied OpenAI module's
-behavior.
+A collection é criada se não existir. Uma collection existente precisa ter o mesmo vectorizer, modelo, configuração de embeddings e propriedades esperadas. O adapter rejeita incompatibilidades em vez de alterar o schema existente. Use uma collection dedicada, com um vetor sem nome. Nomes devem começar com letra maiúscula e conter somente letras, números e `_`.
 
-The default crawl is capped at 100 pages, depth 4, and concurrency 4. Tune the
-manual run with `AUTO_KB_NAMESPACE`, `AUTO_VECTOR_STORE_NAME`,
-`AUTO_MAX_PAGES`, `AUTO_MAX_DEPTH`,
-`AUTO_CRAWL_CONCURRENCY`,
-`AUTO_MATERIALIZATION_CONCURRENCY`, `AUTO_MAX_FAILURES`,
-`AUTO_MAX_ELAPSED_MS`, `AUTO_PAGE_TIMEOUT_MS`,
-`AUTO_MAX_BYTES_PER_DOCUMENT`, `AUTO_MAX_KB_FILES`, `AUTO_MAX_KB_BYTES`,
-`AUTO_UPLOAD_CONCURRENCY`,
-`AUTO_MAX_CHUNK_SIZE_TOKENS`, and `AUTO_CHUNK_OVERLAP_TOKENS`.
-The adapter module and configuration are validated before website discovery.
+O vectorizer `text2vec-weaviate` gera os embeddings na importação dos objetos e está disponível no Weaviate Cloud. Não há uma chamada separada a `/embeddings` nesta integração. Consulte a [documentação oficial dos embeddings Weaviate](https://docs.weaviate.io/weaviate/model-providers/weaviate/embeddings) para modelos, dimensões e disponibilidade.
 
-The runner derives a stable `domain` from the nearest materialized parent page.
-`AUTO_METADATA_MODE=local` is the default: it extracts `tags` and `keywords`
-from Markdown headings and repeated terms without model calls. Set
-`AUTO_METADATA_MODE=model` to use a hosted semantic enricher; the default is
-OpenAI Responses with `gpt-6-luna` and `OPENAI_API_KEY`:
+Os arquivos originais ficam em `kb/<SOURCE_ID>/`. Os arquivos efetivamente enviados após o splitter e seu `manifest.json` ficam em `kb/<SOURCE_ID>/split/<id>/`. Os relatórios de execução ficam em `data/ingestion-results/<SOURCE_ID>/` e incluem o resultado do adapter. O resultado Weaviate identifica a collection e os objetos `{filename, id, chunkId}`; não representa uploads pela API Files da OpenAI.
 
-```bash
-AUTO_METADATA_MODE=model npm run ingest
-```
+O runner faz importação/upsert, sem remover objetos antigos de arquivos alterados. Para snapshots isolados, escolha outra collection; para atualizações com remoção de conteúdo anterior, use o pipeline incremental com vetores pré-calculados. Falhas de um lote podem ocorrer depois de outros objetos terem sido persistidos: o adapter verifica o status de cada objeto e só retorna sucesso após todos os lotes terminarem. IDs são determinísticos por collection, namespace e identidade do chunk.
 
-Model mode first checks the number of uncached files (default maximum 100) and
-estimated input characters (default maximum 3,000,000). It stops before model
-requests when either cap is exceeded. Valid results are cached by provider,
-domain, URL, and content hash in `data/metadata-cache/`, so unchanged files do
-not require another model call. These limits bound requests and input size;
-they are not a monetary price cap. Configure `AUTO_METADATA_MAX_REQUESTS`,
-`AUTO_METADATA_MAX_INPUT_CHARS`, `AUTO_METADATA_MAX_CHARS` (per file),
-`AUTO_METADATA_MODEL`, `AUTO_METADATA_CONCURRENCY`, or
-`AUTO_METADATA_ENRICHER_MODULE` to control this stage.
+### Configuração do Weaviate
 
-Before either metadata mode, the runner caps the knowledge base at 100 files
-and 50 MiB of normalized Markdown by default. It stops before model and
-Vector Store requests when `AUTO_MAX_KB_FILES` or `AUTO_MAX_KB_BYTES` is
-exceeded. The report records the observed file count and bytes.
+| Variável | Uso / padrão |
+| --- | --- |
+| `WEAVIATE_URL` | Endpoint do cluster; pode terminar em `/v1`. Obrigatório. |
+| `WEAVIATE_COLLECTION` | Collection dedicada. Obrigatório. |
+| `WEAVIATE_API_KEY` | Chave do cluster; mantida somente no ambiente local. |
+| `WEAVIATE_EMBEDDING_MODEL` | `Snowflake/snowflake-arctic-embed-l-v2.0`. |
+| `WEAVIATE_EMBEDDING_DIMENSIONS` | Dimensões opcionais, suportadas pelo modelo escolhido. |
+| `WEAVIATE_EMBEDDING_BASE_URL` | Endpoint opcional do serviço de embeddings configurado no vectorizer. |
+| `WEAVIATE_TIMEOUT_MS` | Timeout por requisição; `30000`. |
+| `WEAVIATE_BATCH_SIZE` | Objetos por lote; `100`, entre 1 e 200. |
+| `WEAVIATE_MAX_CHUNK_CHARACTERS` | Tamanho do splitter local do adapter; `6400` caracteres. |
 
-Both modes validate the semantic metadata before upload. The run report
-includes the mode, cache and model-request counts, domain catalog, and per-file
-metadata manifest. The Vector Store upload is skipped if any file lacks valid
-semantic metadata.
-Consumers that filter on `attributes.domain` should use the exact domain list
-from the report's `metadataEnrichment.domains` field.
+O tamanho em caracteres não garante uma contagem exata de tokens nem overlap. O adapter Weaviate rejeita `request.chunking` com parâmetros de tokens; o runner omite esse campo para `AUTO_VECTOR_STORE_PROVIDER=weaviate`.
 
-Browser rendering requires the Puppeteer Chrome build matching the installed
-package. If it is missing, install it before a manual run with
-`npx puppeteer browsers install chrome`.
+### Limites e metadados do runner
 
-The complete flow is now available behind one source-oriented entry point:
+| Variável | Padrão / finalidade |
+| --- | --- |
+| `AUTO_MAX_PAGES` | 100 páginas descobertas. |
+| `AUTO_MAX_DEPTH` | Profundidade 4. |
+| `AUTO_CRAWL_CONCURRENCY` | 4 operações de descoberta. |
+| `AUTO_MATERIALIZATION_CONCURRENCY` | 4 materializações. |
+| `AUTO_MAX_KB_FILES` | 100 arquivos; aplicado também ao resultado do splitter. |
+| `AUTO_MAX_KB_BYTES` | 50 MiB de Markdown; aplicado também ao resultado do splitter. |
+| `AUTO_SPLITTER_MAX_CHARS` | Splitter estrutural do runner: 6400 caracteres por segmento. |
+| `AUTO_SPLITTER_MAX_INPUT_CHARACTERS` | 3.000.000 caracteres antes de executar o splitter sobre a coleção. |
+| `AUTO_METADATA_MODE` | `local`, sem chamadas a modelos; `model` usa um enricher fornecido. |
+| `AUTO_MARKDOWN_SPLITTER_MODULE` | Módulo opcional que exporta `markdownSplitter` ou `createMarkdownSplitter()`. |
+| `AUTO_VECTOR_STORE_ADAPTER_MODULE` | Módulo opcional que exporta `vectorStoreAdapter` ou `createVectorStoreAdapter()`. |
+| `AUTO_METADATA_ENRICHER_MODULE` | Módulo opcional que exporta `metadataEnricher` ou `createMetadataEnricher()`. |
 
-```text
-SourceInsertionPipeline
-        ↓
-source dispatch
-        ↓
-URL / Website
-        ↓
-RemoteSourceIngestion
-        ↓
-discovery → acquisition → extraction → normalization
-        ↓
-hashing → WebDocument → chunking
-        ↓
-incremental reconciliation
-        ↓
-embeddings → vector upsert/delete
-        ↓
-sync-state commit
-        ↓
-observability + execution budget + structured errors
-        ↓
-SourceInsertionOutcome
-```
+Os limites de tempo e aquisição também podem ser ajustados com `AUTO_MAX_ELAPSED_MS`, `AUTO_PAGE_TIMEOUT_MS`, `AUTO_MAX_BYTES_PER_DOCUMENT` e `AUTO_MAX_FAILURES`. A saída local e os relatórios devem ser consultados para distinguir execução parcial de uma base completa.
 
-## Stable application API
+O modo local deriva `domain`, `tags` e `keywords` do conteúdo e da hierarquia das páginas. O modo de modelo mantém cache por provider, domínio, URL e hash; seus limites são `AUTO_METADATA_MAX_REQUESTS` (100), `AUTO_METADATA_MAX_INPUT_CHARS` (3.000.000), `AUTO_METADATA_MAX_CHARS`, `AUTO_METADATA_MODEL` e `AUTO_METADATA_CONCURRENCY`. Os limites de requisições e caracteres não são um teto monetário.
 
-The facade now exposes two final orchestration methods.
+A seleção explícita `weaviate` tem precedência sobre `AUTO_VECTOR_STORE_ADAPTER_MODULE`. Sem essa seleção, o runner mantém o loader de adapters já existente. O fallback OpenAI e o enricher de modelo legados apontam para o projeto irmão `../3_benchmarks/realtime-compare-mcp-x-function/MarkdownSplitter/`; para usar esses caminhos em outro checkout, forneça os módulos explicitamente. O fluxo Weaviate com metadados locais e splitter estrutural funciona sem esses módulos.
 
-### Strict path
+## MarkdownSplitter
 
-Use `insertSource()` when the caller wants ordinary exception control flow:
+### Divisão local
+
+`StructuralMarkdownSplitter` é o padrão da fachada e do runner. Preserva o texto e offsets UTF-16, prefere limites de parágrafos e não chama modelos. Um limite pode dividir blocos longos de código ou tabelas; injete outro splitter quando precisar preservar esses blocos integralmente.
 
 ```ts
-const result =
-  await ingestion.insertSource({
-    source,
-    namespace: "product-docs",
+import { StructuralMarkdownSplitter } from "remote-ingestion-retrieval";
+
+const splitter = new StructuralMarkdownSplitter({ maxCharacters: 6400 });
+const segments = await splitter.split(markdown, {
+  sourceId: "docs",
+  documentId: "installation",
+  canonicalUrl: "https://docs.example.com/install",
+  documentContentHash: "hash-do-documento",
+});
+```
+
+Para reutilizar um splitter que já existe na aplicação, use `ExistingMarkdownSplitterAdapter`, com `split`, `toMarkdown` e, se houver, `toMetadata`.
+
+### Divisão semântica compatível com inx-nlp
+
+`SemanticMarkdownSplitter` incorpora o contrato `files + metadata` e as regras do projeto MarkdownSplitter e da task `markdown-splitter` do inx-nlp. O executor de modelo/task é injetado pela aplicação; não há SDK ou modelo obrigatório.
+
+O splitter fornece instruções, JSON Schema e contexto de origem ao executor. Ele exige nomes `NN_semantic_domain.md` em sequência, Markdown sem front matter ou fences externos, metadados completos e correspondência exata entre arquivos e manifest. A saída é validada antes de virar chunks ou arquivos de conhecimento.
+
+```ts
+import {
+  SemanticMarkdownSplitter,
+  type SemanticMarkdownExecutionRequest,
+} from "remote-ingestion-retrieval";
+
+// runStructuredTask é o executor autenticado da aplicação hospedeira.
+// Ele deve respeitar request.signal e retornar o objeto files+metadata ou seu JSON.
+export function createMarkdownSplitter() {
+  return new SemanticMarkdownSplitter({
+    execute: (request: SemanticMarkdownExecutionRequest) => runStructuredTask(request),
+    namespace: "product_docs",
+    normalizedFrom: "markdown",
+    normalizedOn: "2026-10-27",
+    maxInputCharacters: 200_000,
+    maxOutputCharacters: 400_000,
+    maxFiles: 100,
   });
-```
-
-This is equivalent to selecting `ingestWebsite()` or `ingestUrl()` according to
-`source.type`, while keeping a single application entry point.
-
-Errors are not swallowed.
-
-### UI / job path
-
-Use `runSourceInsertion()` when the caller needs one uniform result regardless
-of success or failure:
-
-```ts
-const outcome =
-  await ingestion.runSourceInsertion({
-    source,
-    namespace: "product-docs",
-
-    observability: {
-      runId: "source-job-123",
-      attributes: {
-        trigger: "manual"
-      }
-    },
-
-    limits: {
-      maxElapsedMs: 300_000,
-      maxFetchedBytes: 500 * 1024 * 1024,
-      maxChunks: 100_000,
-      maxEmbeddingInputs: 25_000
-    }
-  });
-```
-
-`runSourceInsertion()` converts the complete operation into exactly one of:
-
-```text
-completed
-partial
-failed
-aborted
-```
-
-It does not throw for pipeline execution failures.
-
-## Outcome contract
-
-Successful outcomes contain the original `WebsiteSyncResult` plus a compact
-application summary:
-
-```ts
-if (outcome.ok) {
-  console.log(outcome.status);
-  console.log(outcome.runId);
-
-  console.log(
-    outcome.summary.documents
-  );
-
-  console.log(
-    outcome.summary.vectors
-  );
 }
 ```
 
-The summary contains:
+Para o runner, salve esse módulo e configure `AUTO_MARKDOWN_SPLITTER_MODULE=./caminho/splitter.ts`. Um arquivo `.ts` é carregado pelo `tsx` já usado em `npm run ingest`. O `runStructuredTask` é uma dependência da aplicação e precisa estar implementado/importado nesse módulo; não é um export desta biblioteca.
 
-```text
-documents
-├── discovered
-├── materialized
-├── failures
-├── added
-├── changed
-├── unchanged
-├── removed
-└── snapshotComplete
-
-vectors
-├── chunksProduced
-├── chunksReused
-├── chunksUpserted
-├── chunksDeleted
-└── embeddingsAvoided
-```
-
-It also includes the final execution-budget snapshot, namespace, pipeline
-revision and downstream mode.
-
-A successful run is reported as `partial` when the website snapshot is not
-complete, downstream reconciliation ran in partial mode, or page-level
-materialization failures were retained under `continue-partial`.
-
-## Failure outcome
-
-Failures are projected through the Phase 24 Error Model:
+A chamada `split(markdown, context)` retorna segmentos para `WebDocumentChunker`. A chamada `files(markdown, context)` retorna `KnowledgeBaseFile[]` para adapters de arquivos. `normalize(markdown, context)` retorna o contrato original:
 
 ```ts
-if (!outcome.ok) {
-  console.log(outcome.status);
-  console.log(outcome.error.code);
-  console.log(outcome.error.retryability);
-}
+const knowledgeBase = await splitter.normalize(markdown, context);
+// { files: [{ filename, markdown }], metadata: [{ filename, attributes }] }
 ```
 
-Example shape:
+Os atributos compatíveis são `organization`, `language`, `document_type`, `domain`, `audience`, `kb_namespace`, `source_file`, `source_pages`, `temporal_sensitivity`, `review_required`, `source_effective_date`, `normalized_from`, `normalized_on` e `tags`. Os valores de origem, namespace e data fornecidos ao executor devem voltar intactos. Para fontes web, `normalized_from` aceita `markdown` e `html`, além dos valores PDF usados pelo contrato original.
 
-```json
-{
-  "ok": false,
-  "status": "failed",
-  "runId": "source-job-123",
-  "sourceId": "docs",
-  "sourceType": "website",
-  "error": {
-    "code": "REMOTE_TIMEOUT",
-    "category": "network",
-    "stage": "fetch",
-    "retryability": "yes",
-    "aborted": false
-  }
-}
-```
+A execução preserva o idioma, números, condições, exceções e ambiguidades da fonte. A validação estrutural não prova fidelidade factual de um modelo; `review_required` continua relevante. Alterações semânticas não recebem offsets inventados: o chunker só marca uma posição como resolvida quando há correspondência no texto ou offsets explícitos.
 
-Abort/deadline failures become:
+Os metadados semânticos são mantidos em `chunk.metadata.splitter.attributes` e projetados para os metadados vetoriais. Os identificadores e hashes gerados pelo pipeline têm precedência sobre atributos do splitter.
 
-```text
-status: aborted
-```
+## Pipeline incremental com vetores pré-calculados
 
-rather than generic failures.
-
-## Run correlation
-
-When the caller supplies a run ID, the same ID is passed through to the
-existing `WebsiteSyncService` observability run:
-
-```text
-Source Insertion UI/job
-        │ runId=job-123
-        ↓
-runSourceInsertion()
-        ↓
-WebsiteSyncService
-        ↓
-materialization / chunking / embeddings / vector store
-        ↓
-observability events with the same runId
-```
-
-If no run ID is supplied, the pipeline creates one before execution and returns
-it in the outcome.
-
-## Source dispatch
-
-Phase 27 currently supports the remote source kinds already implemented by the
-library:
-
-```text
-url
-website
-```
-
-The dispatcher is isolated in `SourceInsertionPipeline`, so additional source
-families can later be added without changing the UI/job outcome contract.
-
-Unsupported runtime source types fail with a structured `INVALID_INPUT` error.
-
-## Complete facade example
+Use esse caminho quando o host já fornece embeddings ou precisa de reconciliação incremental, inclusive exclusão de chunks antigos. O Weaviate fica configurado com `vectorizer: none`.
 
 ```ts
 import {
   RemoteSourceIngestion,
-} from "remote-source-ingestion";
+  StructuralMarkdownSplitter,
+  WeaviateVectorStore,
+} from "remote-ingestion-retrieval";
 
-const ingestion =
-  new RemoteSourceIngestion({
-    pipelineRevision:
-      "splitter-v4:embedding-v3:metadata-v1",
+// embeddingProvider implementa EmbeddingProvider e pertence à aplicação.
+const vectorStore = new WeaviateVectorStore({
+  url: process.env.WEAVIATE_URL!,
+  apiKey: process.env.WEAVIATE_API_KEY,
+  collection: "ProductDocsVectors",
+});
+await vectorStore.ensureCollection();
 
-    markdownSplitter,
-    embeddingProvider,
-    vectorStore,
-  });
+const ingestion = new RemoteSourceIngestion({
+  pipelineRevision: "structural-v1:embedding-model-and-dimensions-v1:metadata-v1",
+  markdownSplitter: new StructuralMarkdownSplitter({ maxCharacters: 6400 }),
+  embeddingProvider,
+  vectorStore,
+  stateRootDirectory: "./data/sync",
+});
 
 try {
-  const outcome =
-    await ingestion.runSourceInsertion({
-      source: {
-        id: "docs",
-        type: "website",
-        url: "https://docs.example.com/",
-        createdAt: new Date(),
-        updatedAt: new Date(),
-
-        options: {
-          crawl: {
-            discoveryStrategy:
-              "sitemap-and-crawl",
-            maxPages: 10_000,
-            maxDepth: 5,
-            concurrency: 6,
-            sameOriginOnly: true,
-          }
-        }
+  const now = new Date();
+  const outcome = await ingestion.runSourceInsertion({
+    source: {
+      id: "product-docs",
+      type: "website",
+      url: "https://docs.example.com/",
+      createdAt: now,
+      updatedAt: now,
+      options: {
+        crawl: {
+          discoveryStrategy: "sitemap-and-crawl",
+          sameOriginOnly: true,
+          maxPages: 100,
+          maxDepth: 3,
+          concurrency: 3,
+        },
       },
-
-      namespace:
-        "knowledge-base",
-
-      failurePolicy:
-        "continue-partial",
-    });
-
-  if (!outcome.ok) {
-    // Map the structured error to the application UI/job state.
-    console.error(
-      outcome.error
-    );
-  }
+    },
+    namespace: "product_docs",
+    failurePolicy: "continue-partial",
+    materializationConcurrency: 3,
+    limits: {
+      maxElapsedMs: 300_000,
+      maxFetchedBytes: 100 * 1024 * 1024,
+      maxChunks: 10_000,
+      maxEmbeddingInputs: 5_000,
+    },
+  });
+  if (outcome.ok) console.log(outcome.status, outcome.summary);
+  else console.error(outcome.status, outcome.error);
 } finally {
   await ingestion.close();
 }
 ```
 
-## Existing lower-level public methods
+Para uma única URL, use `source.type: "url"`; os demais campos básicos da fonte são os mesmos. `pipelineRevision` deve mudar quando houver alteração do splitter, modelo, dimensões, pré-processamento ou projeção dos metadados. Preserve o diretório de estado para que a próxima execução possa reconhecer conteúdo inalterado.
 
-Phase 27 keeps all Phase 26 APIs intact:
+`insertSource(request)` propaga exceções. `runSourceInsertion(request)` retorna `completed`, `partial`, `failed` ou `aborted`, com `runId`, resumo e erro estruturado quando houver falha. Um snapshot incompleto não autoriza remover documentos que não foram observados.
 
-```text
-ingestWebsite()
-ingestUrl()
-discoverWebsite()
-materializeUrl()
-chunkDocument()
-close()
-```
+O `namespace` participa dos IDs dos objetos e é persistido como propriedade para filtros. Ele é uma separação lógica; a autorização de acesso ao cluster deve ser configurada pelo host.
 
-`insertSource()` and `runSourceInsertion()` are orchestration layers, not
-replacements for those targeted operations.
-
-## Public vs advanced exports
-
-Stable application APIs are available from:
+## Uso direto do adapter de arquivos
 
 ```ts
-import {
-  RemoteSourceIngestion,
-  SourceInsertionPipeline,
-  summarizeSourceInsertion,
-} from "remote-source-ingestion";
+import { WeaviateKnowledgeBaseAdapter } from "remote-ingestion-retrieval";
+
+const adapter = new WeaviateKnowledgeBaseAdapter({
+  url: process.env.WEAVIATE_URL!,
+  apiKey: process.env.WEAVIATE_API_KEY,
+  collection: "SupportKnowledge",
+  model: "Snowflake/snowflake-arctic-embed-l-v2.0",
+  maxChunkCharacters: 6400,
+});
+
+const result = await adapter.ingest({
+  name: "Support knowledge",
+  namespace: "support",
+  files: [{
+    filename: "01_billing.md",
+    markdown: "# Billing\n\nPayment instructions from the source.",
+    metadata: { domain: "billing", tags: "billing,payments", source_url: "https://example.com/billing" },
+  }],
+});
+console.log(result.storeId, result.objects);
 ```
 
-The entire implementation graph remains available through:
+`domain` é uma propriedade de tokenização `field`, adequada a igualdade exata. `tags` e `keywords` aceitam arrays ou strings separadas por vírgula; o adapter os persiste como arrays. A proveniência completa é conservada em `metadataJson`.
 
-```ts
-import {
-  WebsiteDiscoveryService,
-  IncrementalVectorSyncService,
-  HttpRemoteFetcher,
-} from "remote-source-ingestion/advanced";
-```
+O `inx-voice-assistant-inxide` consultado usa `/vector_stores/{id}/search` da API OpenAI e filtros exatos por domínio. Uma collection Weaviate não substitui diretamente esse ID. O consumidor precisa de um adapter de busca Weaviate que mantenha o filtro de namespace/domínio e converta objetos em resultados com texto e proveniência. Esta biblioteca implementa ingestão; não altera os serviços inx nem sua API de busca.
 
-## Final roadmap architecture
+## APIs e extensão
 
-The completed Phases 0–27 now form:
+Além da fachada, estão disponíveis `discoverWebsite()`, `materializeUrl()`, `chunkDocument()`, `ingestWebsite()`, `ingestUrl()` e `close()`. Os serviços avançados podem ser importados por `remote-ingestion-retrieval/advanced`.
 
-```text
-Domain model
-  ↓
-secure remote resolution/fetch
-  ↓
-content extraction
-  ↓
-HTML/remote document normalization
-  ↓
-rendering strategy + Puppeteer
-  ↓
-website discovery / sitemap / crawler
-  ↓
-URL canonicalization / filters / scheduler
-  ↓
-WebDocument
-  ↓
-Markdown splitter + chunk metadata
-  ↓
-embeddings / vector store
-  ↓
-incremental sync
-  ↓
-content-hash trace
-  ↓
-website reconciliation
-  ↓
-observability
-  ↓
-structured error model
-  ↓
-execution limits
-  ↓
-stable public facade
-  ↓
-Source Insertion Pipeline
-```
+A aquisição mantém as proteções de URL, DNS e redirects, limites de bytes/tempo e cancelamento. PDF depende de um `PdfMarkdownProcessor` fornecido pelo host. Markdown e metadados permanecem a fronteira entre aquisição e processamento downstream.
 
-## Visual validation
+As estratégias para repositórios GitHub e deduplicação estão em [Estratégias de descoberta e deduplicação](docs/ingestion-strategies.md), com as evidências dos casos `githubqdrant` e `giassi`, contenções disponíveis e propostas de implementação.
 
-After the compiled tests run, Phase 27 writes only its current visual artifacts
-under:
-
-```text
-data/visual-validation/phase-27/
-├── source-insertion-outcomes.json
-├── service-graph.json
-└── vector-records.json
-```
-
-Inspect the main outcome with:
+## Validação local
 
 ```bash
-npm run pipeline:show
+npm run typecheck
+npm run build
 ```
 
-## Requirements
-
-```text
-Node.js >= 22
-TypeScript >= 5.8
-FF-independent; provider-specific embedding/vector services are injected
-```
-
-The required host contracts remain:
-
-```text
-MarkdownSplitter
-EmbeddingProvider
-VectorStore
-```
-
-PDF support additionally accepts the existing `PdfMarkdownProcessor` adapter.
+Esses comandos verificam tipos e compilação. Não executam ingestão, geração de embeddings, gravação em collections ou busca real no provider.

@@ -6,3 +6,6 @@ export * from "./web-document-chunker.js";
 export * from "./document-chunk-metadata.js";
 export * from "./document-chunk-metadata-builder.js";
 export * from "./markdown-source-index.js";
+export * from "./structural-markdown-splitter.js";
+export * from "./semantic-knowledge-base.js";
+export * from "./semantic-markdown-splitter.js";

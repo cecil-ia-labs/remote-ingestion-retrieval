@@ -60,7 +60,8 @@ export interface RemoteSourceIngestionOptions {
   readonly pipelineRevision:
     string;
 
-  readonly markdownSplitter:
+  /** Defaults to StructuralMarkdownSplitter; semantic splitting is opt-in. */
+  readonly markdownSplitter?:
     MarkdownSplitter;
 
   readonly embeddingProvider:

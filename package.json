@@ -28,13 +28,14 @@
       "types": "./dist/index.d.ts"
     },
     "./advanced": {
-      "import": "./dist/sources/index.js",
-      "types": "./dist/sources/index.d.ts"
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
     }
   },
   "files": [
     "dist",
-    "README.md"
+    "README.md",
+    "docs/ingestion-strategies.md"
   ],
   "main": "./dist/index.js",
   "name": "remote-ingestion-retrieval",

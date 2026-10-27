@@ -8,6 +8,8 @@ import type {
 } from "../website/web-document.js";
 
 export interface MarkdownSplitterContext {
+  /** Cancellation shared with the ingestion run, including semantic model calls. */
+  signal?: AbortSignal;
   sourceId:
     SourceId;
 
