@@ -43,7 +43,7 @@ export class WeaviateHttpError extends Error {
   }
 }
 
-/** Small REST transport; no credentials or response bodies are included in errors. */
+/** Small REST transport; HTTP errors omit response bodies; batch errors expose limited object-level messages. */
 export class WeaviateRestClient {
   private readonly baseUrl: string;
   private readonly headers: Headers;
@@ -91,9 +91,31 @@ export class WeaviateRestClient {
       throw new Error("Weaviate batch returned an invalid object count.");
     }
     for (const [index, item] of result.entries()) {
-      if (!isWeaviateRecord(item) || !isWeaviateRecord(item.result)
-        || item.result.status !== "SUCCESS" || (item.result.errors !== undefined && item.result.errors !== null)) {
-        throw new Error(`Weaviate batch object ${index} failed; the batch may be partially persisted.`);
+      if (!isWeaviateRecord(item) || !isWeaviateRecord(item.result)) {
+        throw new Error(`Weaviate batch object ${index} returned an invalid result; the batch may be partially persisted.`);
+      }
+
+      const batchResult = item.result;
+      const errors = batchResult.errors;
+      const errorItems = isWeaviateRecord(errors) ? errors.error : undefined;
+      // Weaviate may include an empty errors array even when an object succeeds.
+      const hasErrors = errors !== undefined && errors !== null
+        && (!isWeaviateRecord(errors) || Object.keys(errors).some((key) => key !== "error")
+          || !Array.isArray(errorItems) || errorItems.length > 0);
+      if (batchResult.status !== "SUCCESS" || hasErrors) {
+        const messages = Array.isArray(errorItems)
+          ? errorItems.flatMap((entry: unknown): string[] => {
+            if (typeof entry === "string") return [entry];
+            if (isWeaviateRecord(entry) && typeof entry.message === "string") return [entry.message];
+            return [];
+          }).map((message: string) => message.replace(/\s+/g, " ").trim()).filter(Boolean)
+            .slice(0, 3).map((message: string) => message.slice(0, 500))
+          : [];
+        const status = typeof batchResult.status === "string" ? batchResult.status.slice(0, 80) : "UNKNOWN";
+        const details = messages.length ? `; errors: ${messages.join("; ")}` : "; no error details returned";
+        throw new Error(
+          `Weaviate batch object ${index} failed (status: ${status}${details}); the batch may be partially persisted.`,
+        );
       }
     }
   }
