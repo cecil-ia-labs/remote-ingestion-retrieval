@@ -7,3 +7,5 @@ export * from "./document-chunk-vector-indexer.js";
 
 export * from "./weaviate-client.js";
 export * from "./weaviate-vector-store.js";
+export * from "./qdrant-client.js";
+export * from "./qdrant-vector-store.js";

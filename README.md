@@ -4,10 +4,51 @@ Biblioteca TypeScript para transformar URLs e websites em Markdown, dividir o co
 
 O pacote oferece duas formas de armazenamento:
 
-- **Vetores pré-calculados:** `RemoteSourceIngestion` recebe um `EmbeddingProvider` e um `VectorStore`. O adapter `WeaviateVectorStore` grava e exclui vetores no Weaviate, incluindo instalações próprias.
-- **Arquivos Markdown:** `KnowledgeBaseVectorStoreAdapter` recebe arquivos e metadados. O adapter `WeaviateKnowledgeBaseAdapter` divide o texto e usa os embeddings nativos do Weaviate Cloud durante a importação.
+- **Vetores pré-calculados:** `RemoteSourceIngestion` recebe um `EmbeddingProvider` e um `VectorStore`. Os adapters `WeaviateVectorStore` e `QdrantVectorStore` gravam e excluem vetores, incluindo instalações próprias.
+- **Arquivos Markdown:** `KnowledgeBaseVectorStoreAdapter` recebe arquivos e metadados. Os adapters Weaviate/Qdrant dividem o texto e usam a vetorização nativa do cluster; o Qdrant também aceita embeddings fornecidos pelo host.
 
 Esses contratos têm responsabilidades diferentes. Uma API de upload de arquivos não precisa implementar o contrato de vetores pré-calculados.
+
+## Configuração comum dos providers
+
+`AUTO_VECTOR_STORE_BASE_URL` é a URL principal do armazenamento selecionado. A configuração compartilhada é resolvida por `resolveVectorStoreProviderConfiguration()` e consumida por `createKnowledgeBaseVectorStoreAdapter()` e `createPrecomputedVectorStore()`.
+
+| Variável | Responsabilidade |
+| --- | --- |
+| `AUTO_VECTOR_STORE_PROVIDER` | `weaviate`, `qdrant`, `openai-compatible` ou `custom`. |
+| `AUTO_VECTOR_STORE_BASE_URL` | Endpoint HTTP(S) da API do armazenamento. |
+| `AUTO_VECTOR_STORE_API_KEY` | Chave do armazenamento selecionado. |
+| `AUTO_VECTOR_STORE_COLLECTION` | Collection dos providers Weaviate/Qdrant. |
+| `AUTO_VECTOR_STORE_TIMEOUT_MS` | Timeout de requisição; padrão 30000. |
+| `AUTO_VECTOR_STORE_BATCH_SIZE` | Lote; padrão 100, entre 1 e 200 na configuração comum. |
+| `AUTO_VECTOR_STORE_MAX_CHUNKS` | Limite antes das chamadas de embeddings; padrão 10000. |
+| `AUTO_VECTOR_STORE_MAX_CHUNK_CHARACTERS` | Divisão local; padrão 6400 caracteres. |
+| `AUTO_VECTOR_STORE_VERIFICATION_ATTEMPTS` | Tentativas de confirmação; padrão 3. |
+| `AUTO_VECTOR_STORE_VERIFICATION_DELAY_MS` | Intervalo entre tentativas; padrão 250, aceita zero. |
+| `AUTO_EMBEDDING_MODE` | `native` ou `provided`; seleciona `provided` por padrão quando há módulo de embeddings. |
+| `AUTO_EMBEDDING_MODEL` / `AUTO_EMBEDDING_DIMENSIONS` | Modelo e dimensões dos embeddings. |
+| `AUTO_EMBEDDING_BASE_URL` / `AUTO_EMBEDDING_API_KEY` | Conexão de um serviço externo de embeddings, fornecida ao módulo do host. |
+| `AUTO_EMBEDDING_PROVIDER_MODULE` | Módulo que exporta `embeddingProvider` ou `createEmbeddingProvider(configuration)`. |
+
+Valores genéricos **não vazios** têm precedência sobre os aliases do provider selecionado. `WEAVIATE_URL`, `WEAVIATE_API_KEY`, `WEAVIATE_COLLECTION` e as opções `WEAVIATE_*` anteriores continuam como fallback para Weaviate. Os aliases equivalentes `QDRANT_URL`, `QDRANT_API_KEY`, `QDRANT_COLLECTION`, `QDRANT_EMBEDDING_MODEL`, `QDRANT_EMBEDDING_DIMENSIONS` e demais opções `QDRANT_*` também são aceitos. Nenhuma chave específica de outro provider é reutilizada. `QDRANT_DISTANCE` permanece específico, pois configura uma capacidade do Qdrant.
+
+Ao migrar um `.env` antigo, remova valores genéricos antigos que apontem para outro serviço: eles agora têm precedência também no Weaviate. A implementação não altera seu arquivo `.env` nem migra credenciais automaticamente.
+
+O endpoint de embeddings externo é independente do armazenamento: `AUTO_EMBEDDING_BASE_URL` não substitui `AUTO_VECTOR_STORE_BASE_URL`. Embeddings nativos do Weaviate/Qdrant usam a chave do cluster. O Weaviate também permite configurar a URL de seu vectorizer nativo por `AUTO_EMBEDDING_BASE_URL`; o Qdrant nativo usa Cloud Inference do próprio cluster e rejeita um endpoint externo nesse modo.
+
+```ts
+import {
+  resolveVectorStoreProviderConfiguration,
+  createKnowledgeBaseVectorStoreAdapter,
+} from "remote-ingestion-retrieval";
+
+const configuration = resolveVectorStoreProviderConfiguration(process.env);
+const adapter = await createKnowledgeBaseVectorStoreAdapter(configuration);
+// Mesmo contrato de arquivos para o provider selecionado.
+const result = await adapter.ingest({ name: "Support", namespace: "support", files });
+```
+
+Módulos customizados de Vector Store recebem essa configuração em `createVectorStoreAdapter(configuration)`; módulos legados sem argumentos continuam compatíveis. Sem provider explícito, um módulo selecionado usa `custom`; sem módulo, o fallback permanece `openai-compatible`.
 
 ## Instalação
 
@@ -42,10 +83,10 @@ SOURCE_TITLE=Product documentation
 SOURCE_URL=https://docs.example.com/
 AUTO_KB_NAMESPACE=product_docs
 AUTO_VECTOR_STORE_PROVIDER=weaviate
-WEAVIATE_URL=https://your-cluster.weaviate.cloud
-WEAVIATE_API_KEY=your-cluster-api-key
-WEAVIATE_COLLECTION=ProductDocs
-WEAVIATE_EMBEDDING_MODEL=Snowflake/snowflake-arctic-embed-l-v2.0
+AUTO_VECTOR_STORE_BASE_URL=https://your-cluster.weaviate.cloud
+AUTO_VECTOR_STORE_API_KEY=your-cluster-api-key
+AUTO_VECTOR_STORE_COLLECTION=ProductDocs
+AUTO_EMBEDDING_MODEL=Snowflake/snowflake-arctic-embed-l-v2.0
 ```
 
 Execute:
@@ -68,15 +109,15 @@ O runner faz importação/upsert, sem remover objetos antigos de arquivos altera
 
 | Variável | Uso / padrão |
 | --- | --- |
-| `WEAVIATE_URL` | Endpoint do cluster; pode terminar em `/v1`. Obrigatório. |
-| `WEAVIATE_COLLECTION` | Collection dedicada. Obrigatório. |
-| `WEAVIATE_API_KEY` | Chave do cluster; mantida somente no ambiente local. |
-| `WEAVIATE_EMBEDDING_MODEL` | `Snowflake/snowflake-arctic-embed-l-v2.0`. |
-| `WEAVIATE_EMBEDDING_DIMENSIONS` | Dimensões opcionais, suportadas pelo modelo escolhido. |
-| `WEAVIATE_EMBEDDING_BASE_URL` | Endpoint opcional do serviço de embeddings configurado no vectorizer. |
-| `WEAVIATE_TIMEOUT_MS` | Timeout por requisição; `30000`. |
-| `WEAVIATE_BATCH_SIZE` | Objetos por lote; `100`, entre 1 e 200. |
-| `WEAVIATE_MAX_CHUNK_CHARACTERS` | Tamanho do splitter local do adapter; `6400` caracteres. |
+| `AUTO_VECTOR_STORE_BASE_URL` | Endpoint do cluster; pode terminar em `/v1`. Obrigatório. |
+| `AUTO_VECTOR_STORE_COLLECTION` | Collection dedicada. Obrigatório. |
+| `AUTO_VECTOR_STORE_API_KEY` | Chave do cluster; mantida somente no ambiente local. |
+| `AUTO_EMBEDDING_MODEL` | `Snowflake/snowflake-arctic-embed-l-v2.0`. |
+| `AUTO_EMBEDDING_DIMENSIONS` | Dimensões opcionais, suportadas pelo modelo escolhido. |
+| `AUTO_EMBEDDING_BASE_URL` | Endpoint opcional do serviço de embeddings configurado no vectorizer. |
+| `AUTO_VECTOR_STORE_TIMEOUT_MS` | Timeout por requisição; `30000`. |
+| `AUTO_VECTOR_STORE_BATCH_SIZE` | Objetos por lote; `100`, entre 1 e 200. |
+| `AUTO_VECTOR_STORE_MAX_CHUNK_CHARACTERS` | Tamanho do splitter local do adapter; `6400` caracteres. |
 
 O tamanho em caracteres não garante uma contagem exata de tokens nem overlap. O adapter Weaviate rejeita `request.chunking` com parâmetros de tokens; o runner omite esse campo para `AUTO_VECTOR_STORE_PROVIDER=weaviate`.
 
@@ -88,7 +129,8 @@ O tamanho em caracteres não garante uma contagem exata de tokens nem overlap. O
 | `AUTO_MAX_DEPTH` | Profundidade 4. |
 | `AUTO_CRAWL_CONCURRENCY` | 4 operações de descoberta. |
 | `AUTO_MATERIALIZATION_CONCURRENCY` | 4 materializações. |
-| `AUTO_MAX_KB_FILES` | 100 arquivos; aplicado também ao resultado do splitter. |
+| `AUTO_MAX_KB_FILES` | 100 documentos de origem, antes do splitter. |
+| `AUTO_MAX_SPLIT_FILES` | 10000 arquivos gerados pelo splitter, independentemente da quantidade de documentos. |
 | `AUTO_MAX_KB_BYTES` | 50 MiB de Markdown; aplicado também ao resultado do splitter. |
 | `AUTO_SPLITTER_MAX_CHARS` | Splitter estrutural do runner: 6400 caracteres por segmento. |
 | `AUTO_SPLITTER_MAX_INPUT_CHARACTERS` | 3.000.000 caracteres antes de executar o splitter sobre a coleção. |
@@ -101,7 +143,7 @@ Os limites de tempo e aquisição também podem ser ajustados com `AUTO_MAX_ELAP
 
 O modo local deriva `domain`, `tags` e `keywords` do conteúdo e da hierarquia das páginas. O modo de modelo mantém cache por provider, domínio, URL e hash; seus limites são `AUTO_METADATA_MAX_REQUESTS` (100), `AUTO_METADATA_MAX_INPUT_CHARS` (3.000.000), `AUTO_METADATA_MAX_CHARS`, `AUTO_METADATA_MODEL` e `AUTO_METADATA_CONCURRENCY`. Os limites de requisições e caracteres não são um teto monetário.
 
-A seleção explícita `weaviate` tem precedência sobre `AUTO_VECTOR_STORE_ADAPTER_MODULE`. Sem essa seleção, o runner mantém o loader de adapters já existente. O fallback OpenAI e o enricher de modelo legados apontam para o projeto irmão `../3_benchmarks/realtime-compare-mcp-x-function/MarkdownSplitter/`; para usar esses caminhos em outro checkout, forneça os módulos explicitamente. O fluxo Weaviate com metadados locais e splitter estrutural funciona sem esses módulos.
+Os providers integrados `weaviate` e `qdrant` têm precedência sobre `AUTO_VECTOR_STORE_ADAPTER_MODULE`. Os modos `custom` e `openai-compatible` usam o loader de módulos. O fallback OpenAI e o enricher de modelo legados apontam para o projeto irmão `../3_benchmarks/realtime-compare-mcp-x-function/MarkdownSplitter/`; para usar esses caminhos em outro checkout, forneça os módulos explicitamente. Os fluxos nativos Weaviate/Qdrant com metadados locais e splitter estrutural funcionam sem esses módulos.
 
 ## MarkdownSplitter
 
@@ -178,8 +220,8 @@ import {
 
 // embeddingProvider implementa EmbeddingProvider e pertence à aplicação.
 const vectorStore = new WeaviateVectorStore({
-  url: process.env.WEAVIATE_URL!,
-  apiKey: process.env.WEAVIATE_API_KEY,
+  url: process.env.AUTO_VECTOR_STORE_BASE_URL!,
+  apiKey: process.env.AUTO_VECTOR_STORE_API_KEY,
   collection: "ProductDocsVectors",
 });
 await vectorStore.ensureCollection();
@@ -240,8 +282,8 @@ O `namespace` participa dos IDs dos objetos e é persistido como propriedade par
 import { WeaviateKnowledgeBaseAdapter } from "remote-ingestion-retrieval";
 
 const adapter = new WeaviateKnowledgeBaseAdapter({
-  url: process.env.WEAVIATE_URL!,
-  apiKey: process.env.WEAVIATE_API_KEY,
+  url: process.env.AUTO_VECTOR_STORE_BASE_URL!,
+  apiKey: process.env.AUTO_VECTOR_STORE_API_KEY,
   collection: "SupportKnowledge",
   model: "Snowflake/snowflake-arctic-embed-l-v2.0",
   maxChunkCharacters: 6400,
@@ -265,7 +307,7 @@ O `inx-voice-assistant-inxide` consultado usa `/vector_stores/{id}/search` da AP
 
 ## Upload de arquivos existentes ao Weaviate
 
-Para enviar Markdown/texto já salvo, sem repetir o crawl, configure `WEAVIATE_URL`, `WEAVIATE_COLLECTION` e a chave do cluster em `.env`:
+Para enviar Markdown/texto já salvo, sem repetir o crawl, configure `AUTO_VECTOR_STORE_BASE_URL`, `AUTO_VECTOR_STORE_COLLECTION` e a chave do cluster em `.env`:
 
 ```bash
 npm run upload:weaviate -- --namespace support --domain billing ./kb/01_billing.md
@@ -277,11 +319,11 @@ Também é possível reutilizar os arquivos e metadados de um manifest gerado pe
 npm run upload:weaviate -- --namespace support --manifest ./kb/source/split/run/manifest.json
 ```
 
-O manifest deve conter `files: [{ filename, metadata }]`; cada arquivo fica ao lado dele. A seleção por caminhos aceita `.md`, `.markdown` e `.txt` UTF-8. Os limites padrão são 100 arquivos, 5 MiB por arquivo e 50 MiB no total, ajustáveis por `AUTO_MAX_KB_FILES`, `AUTO_MAX_BYTES_PER_DOCUMENT` e `AUTO_MAX_KB_BYTES`. O adapter também limita a 10.000 chunks antes de chamar embeddings, configuráveis por `WEAVIATE_MAX_CHUNKS` ou `maxChunks` no construtor. `--report` escolhe o caminho do relatório; o padrão é `data/weaviate-uploads/<id>.json`.
+O manifest deve conter `files: [{ filename, metadata }]`; cada arquivo fica ao lado dele. A seleção por caminhos aceita `.md`, `.markdown` e `.txt` UTF-8. Os limites padrão são 100 arquivos, 5 MiB por arquivo e 50 MiB no total, ajustáveis por `AUTO_MAX_KB_FILES`, `AUTO_MAX_BYTES_PER_DOCUMENT` e `AUTO_MAX_KB_BYTES`. O adapter também limita a 10.000 chunks antes de chamar embeddings, configuráveis por `AUTO_VECTOR_STORE_MAX_CHUNKS` ou `maxChunks` no construtor. `--report` escolhe o caminho do relatório; o padrão é `data/weaviate-uploads/<id>.json`.
 
 Na API, use `adapter.ingestFiles({ name, namespace, files: [{ path, filename?, metadata? }], signal? })`, ou `loadKnowledgeBaseFiles()` para carregar os arquivos antes de chamar outro adapter. PDFs e outros formatos binários precisam passar pela aquisição/conversão antes desse upload.
 
-No Weaviate, o conteúdo dos arquivos é importado como objetos com texto e metadados; o vectorizer gera os embeddings durante a gravação. Depois dos lotes, o adapter lê cada objeto com seu vetor, confere texto/proveniência e exige vetores não vazios, finitos e com dimensões consistentes. O resultado contém IDs reais dos chunks por arquivo, hashes, bytes e o resumo `verification`. Somente após essa conferência o upload é considerado concluído. `WEAVIATE_VERIFICATION_ATTEMPTS` (3, entre 1 e 10) e `WEAVIATE_VERIFICATION_DELAY_MS` (250) controlam as tentativas.
+No Weaviate, o conteúdo dos arquivos é importado como objetos com texto e metadados; o vectorizer gera os embeddings durante a gravação. Depois dos lotes, o adapter lê cada objeto com seu vetor, confere texto/proveniência e exige vetores não vazios, finitos e com dimensões consistentes. O resultado contém IDs reais dos chunks por arquivo, hashes, bytes e o resumo `verification`. Somente após essa conferência o upload é considerado concluído. `AUTO_VECTOR_STORE_VERIFICATION_ATTEMPTS` (3, entre 1 e 10) e `AUTO_VECTOR_STORE_VERIFICATION_DELAY_MS` (250) controlam as tentativas.
 
 O relatório do runner conserva `files` para os documentos originais e `splitFiles`, `objects` e `splitManifestPath` para os arquivos efetivamente enviados e os objetos persistidos. Assim, a mudança de nomes causada pelo splitter não é tratada como falha de upload.
 
@@ -297,8 +339,8 @@ const search = await connectWeaviateSearch({
   collection: "SupportKnowledge",
   connection: {
     mode: "cloud",
-    url: process.env.WEAVIATE_URL!,
-    options: { authCredentials: new weaviate.ApiKey(process.env.WEAVIATE_API_KEY!) },
+    url: process.env.AUTO_VECTOR_STORE_BASE_URL!,
+    options: { authCredentials: new weaviate.ApiKey(process.env.AUTO_VECTOR_STORE_API_KEY!) },
   },
 });
 try {
@@ -359,6 +401,77 @@ Os limites são `GITHUB_MAX_FILES` (100), `GITHUB_MAX_FILE_BYTES` (5 MiB), `GITH
 Árvores recursivas truncadas acionam enumeração de subárvores. Se ainda houver truncamento ou esgotamento de orçamento, o snapshot fica parcial. O relatório registra commit, escopo, candidatos elegíveis, selecionados, pendentes, chamadas e amostras dos caminhos ignorados com os motivos. Os documentos carregam `{ owner, repo, ref, commitSha, path, blobSha }`; a identidade usa referência/caminho estáveis entre commits, enquanto a aquisição usa o blob fixado. As proteções existentes de DNS, bytes, tempo e cancelamento também se aplicam à API GitHub.
 
 Snapshots parciais não autorizam apagar documentos não observados na sincronização incremental. A mesma proteção agora trata o limite de páginas de websites convencionais de forma conservadora.
+
+## Qdrant
+
+`npm run ingest` realiza o upload automaticamente após descoberta, materialização, metadados e divisão, tanto para Weaviate quanto para Qdrant. Não é necessário executar um segundo comando de upload após uma ingestão concluída. Limites ou falhas anteriores podem impedir essa etapa; confira o status e o resultado de Vector Store no relatório.
+
+O suporte inclui `QdrantVectorStore`, `QdrantKnowledgeBaseAdapter` e `QdrantSearchAdapter`. Usa REST com autenticação `api-key`, timeout/cancelamento, UUIDs determinísticos por namespace e operações de gravação com `wait=true`. Não há upload fictício para uma API Files: os arquivos são divididos localmente e importados como pontos com texto, payload e vetor.
+
+Para Cloud Inference, habilite o recurso no cluster e copie o **modelo e as dimensões exatos** da aba Inference do painel. O adapter não presume esses valores. O fluxo segue a [documentação oficial do Qdrant Cloud Inference](https://qdrant.tech/documentation/inference/cloud-inference/).
+
+```dotenv
+AUTO_VECTOR_STORE_PROVIDER=qdrant
+AUTO_VECTOR_STORE_BASE_URL=https://your-cluster.qdrant.io:6333
+AUTO_VECTOR_STORE_API_KEY=your-cluster-api-key
+AUTO_VECTOR_STORE_COLLECTION=knowledge_chunks
+AUTO_EMBEDDING_MODE=native
+AUTO_EMBEDDING_MODEL=your-enabled-model
+AUTO_EMBEDDING_DIMENSIONS=384
+QDRANT_DISTANCE=Cosine
+```
+
+`384` é apenas um exemplo: substitua-o pelas dimensões do modelo selecionado. Depois, use os mesmos comandos de ingestão e upload:
+
+```bash
+npm run ingest
+npm run upload:vector-store -- --namespace support --domain billing ./arquivo.md
+npm run upload:vector-store -- --namespace support --manifest ./kb/source/split/run/manifest.json
+```
+
+O upload genérico grava relatórios em `data/vector-store-uploads/<provider>/`. O comando legado `upload:weaviate` continua disponível e seleciona Weaviate explicitamente, preservando seu diretório de relatórios anterior.
+
+O provisionamento verifica collection com um único vetor denso sem nome e dimensões/distância compatíveis; cria índices `keyword` para namespace e domínio quando ausentes. O readback confere payload, texto, IDs e vetores antes de retornar sucesso. A busca exige namespace, aceita domínio, limite e `scoreThreshold` e retorna o score nativo do Qdrant, cuja interpretação depende da distância configurada.
+
+```ts
+import { QdrantSearchAdapter, resolveVectorStoreProviderConfiguration } from "remote-ingestion-retrieval";
+
+const configuration = resolveVectorStoreProviderConfiguration();
+const search = new QdrantSearchAdapter({
+  url: configuration.baseUrl!,
+  apiKey: configuration.apiKey,
+  collection: configuration.collection!,
+  model: configuration.embedding.model,
+  dimensions: configuration.embedding.dimensions!,
+});
+const results = await search.search({ query: "Como pagar?", namespace: "support", domain: "billing", limit: 5 });
+```
+
+Para Qdrant instalado localmente ou um modelo executado pelo host, use `AUTO_EMBEDDING_MODE=provided` e `AUTO_EMBEDDING_PROVIDER_MODULE=./embedding-provider.ts`. O módulo implementa o contrato `EmbeddingProvider` já usado pela biblioteca e recebe somente a configuração de embeddings, sem a chave do banco. Também pode ser injetado pela aplicação:
+
+```ts
+const adapter = await createKnowledgeBaseVectorStoreAdapter(configuration, { embeddingProvider });
+```
+
+Nesse caso, `configuration.embedding.mode` deve ser `provided`. As dimensões vêm da configuração ou de `embeddingProvider.dimensions`, e precisam coincidir com a collection. Use o mesmo provider para consultas, passando-o a `QdrantSearchAdapter`. Para Weaviate com embeddings fornecidos pelo host, o caminho continua sendo `WeaviateVectorStore` com a fachada incremental; seu adapter de arquivos usa vetorização nativa.
+
+A factory `createPrecomputedVectorStore(configuration)` cria o armazenamento Weaviate/Qdrant para o pipeline incremental. Chame `ensureCollection()` antes do primeiro uso. O adapter de arquivos faz upsert de snapshots e não remove chunks antigos de arquivos alterados; a reconciliação de remoções usa o pipeline incremental. Mudar modelo/dimensões exige configurar uma collection compatível e atualizar `pipelineRevision`.
+
+O limite do splitter é medido em caracteres, não tokens. Ajuste-o à janela do modelo: o Cloud Inference pode truncar textos maiores. Collections com vetores nomeados, sparse/multivector e busca híbrida não fazem parte deste adapter denso.
+
+## Retomar somente o upload após uma falha
+
+`AUTO_MAX_KB_FILES` limita documentos de origem; `AUTO_MAX_SPLIT_FILES` limita os arquivos produzidos pela divisão. Os padrões são, respectivamente, 100 e 10000. Um crawl de 97 páginas pode gerar mais de 100 segmentos sem exceder o limite de documentos. `AUTO_MAX_KB_BYTES` continua sendo um teto separado de bytes e também é conferido após a divisão.
+
+Quando os documentos e seus metadados já estão salvos, reenvie-os pelo relatório de ingestão:
+
+```bash
+npm run upload:vector-store -- --ingestion-report ./data/ingestion-results/weaviateacademy/744e47aa-741b-4a38-bd87-fbfebdea4895.json
+```
+
+Esse comando não repete descoberta, materialização nem enriquecimento. Ele verifica os hashes dos arquivos salvos, reaplica o splitter configurado e faz o upload ao provider selecionado no ambiente atual. Os três documentos que falharam na materialização original continuam registrados apenas no relatório original; o reenvio cobre os documentos que foram salvos com sucesso.
+
+Relatórios que já contêm um resultado de Vector Store são recusados para evitar repetir automaticamente um upload concluído. O novo relatório aponta para o original e para o manifest dos arquivos preparados. Para reutilizar um manifest de divisão, use `--manifest`; manifests com `splitter` informado não passam novamente pela divisão e são limitados por `AUTO_MAX_SPLIT_FILES`. Os documentos originais e o relatório anterior permanecem intactos.
 
 ## APIs e extensão
 

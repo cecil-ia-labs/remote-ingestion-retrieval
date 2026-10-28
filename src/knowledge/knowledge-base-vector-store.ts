@@ -46,6 +46,8 @@ export interface KnowledgeBaseVectorStoreIngestResult {
  * This is separate from VectorStore, which accepts precomputed vectors.
  */
 export interface KnowledgeBaseVectorStoreAdapter {
+  /** False when the adapter performs local splitting instead of server-side token chunking. */
+  readonly supportsTokenChunking?: boolean;
   readonly name: string;
 
   ingest(

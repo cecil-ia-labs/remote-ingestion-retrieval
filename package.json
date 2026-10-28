@@ -48,6 +48,7 @@
     "clean": "rm -rf dist",
     "ingest": "node --env-file=.env --import tsx src/cli/ingest.ts",
     "upload:weaviate": "node --env-file=.env --import tsx src/cli/upload-weaviate.ts",
+    "upload:vector-store": "node --env-file=.env --import tsx src/cli/upload-vector-store.ts",
     "pipeline:show": "cat data/visual-validation/phase-27/source-insertion-outcomes.json 2>/dev/null || true",
     "test": "tsx --test src/**/*.test.ts",
     "test:compiled": "npm run build && node --test dist/sources/remote/__tests__/*.test.js dist/sources/extraction/__tests__/*.test.js dist/sources/normalization/__tests__/*.test.js dist/sources/rendering/__tests__/*.test.js dist/sources/persistence/__tests__/*.test.js dist/sources/url/__tests__/*.test.js dist/sources/filtering/__tests__/*.test.js dist/sources/scheduling/__tests__/*.test.js dist/sources/limits/__tests__/*.test.js dist/sources/errors/__tests__/*.test.js dist/sources/observability/__tests__/*.test.js dist/sources/chunking/__tests__/*.test.js dist/sources/hashing/__tests__/*.test.js dist/sources/vector/__tests__/*.test.js dist/sources/sync/__tests__/*.test.js dist/sources/discovery/__tests__/*.test.js dist/sources/website/__tests__/*.test.js dist/sources/public-api/__tests__/*.test.js dist/sources/pipeline/__tests__/*.test.js",

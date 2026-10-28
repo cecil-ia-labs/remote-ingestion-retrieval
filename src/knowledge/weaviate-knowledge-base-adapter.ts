@@ -11,6 +11,7 @@ import type {
   KnowledgeBaseVectorStoreAdapter, KnowledgeBaseVectorStoreIngestRequest, KnowledgeBaseVectorStoreIngestResult,
 } from "./knowledge-base-vector-store.js";
 import { loadKnowledgeBaseFiles, type LocalKnowledgeBaseFile, type KnowledgeBaseFileLoadOptions } from "./knowledge-base-file-loader.js";
+import { resolveVectorStoreProviderConfiguration, type VectorStoreProviderConfiguration } from "./vector-store-provider-config.js";
 
 export interface WeaviateKnowledgeBaseAdapterOptions extends WeaviateConnectionOptions, WeaviateEmbeddingConfiguration {
   readonly collection: string;
@@ -47,6 +48,7 @@ function stringValue(value: JsonValue | undefined): string {
 
 /** Local Markdown chunking and native Weaviate Cloud embedding at object import. */
 export class WeaviateKnowledgeBaseAdapter implements KnowledgeBaseVectorStoreAdapter {
+  readonly supportsTokenChunking = false;
   readonly name = "weaviate-native-embeddings";
   private readonly client: WeaviateRestClient;
   private readonly splitter: MarkdownSplitter;
@@ -190,28 +192,20 @@ export class WeaviateKnowledgeBaseAdapter implements KnowledgeBaseVectorStoreAda
 
 /** Factory accepted by the manual runner's adapter-module loader. */
 export function createVectorStoreAdapter(): WeaviateKnowledgeBaseAdapter {
-  const url = process.env.WEAVIATE_URL?.trim();
-  const collection = process.env.WEAVIATE_COLLECTION?.trim();
-  if (!url || !collection) throw new Error("WEAVIATE_URL and WEAVIATE_COLLECTION are required.");
-  const integer = (key: string): number | undefined => {
-    const value = process.env[key];
-    if (value === undefined || value === "") return undefined;
-    const parsed = Number(value);
-    if (!Number.isSafeInteger(parsed) || parsed <= 0) throw new TypeError(`${key} must be a positive safe integer.`);
-    return parsed;
-  };
+  return createWeaviateKnowledgeBaseAdapter(resolveVectorStoreProviderConfiguration(process.env, "weaviate"));
+}
+
+export function createWeaviateKnowledgeBaseAdapter(configuration: VectorStoreProviderConfiguration): WeaviateKnowledgeBaseAdapter {
+  if (configuration.provider !== "weaviate") throw new TypeError("Expected Weaviate configuration.");
+  if (!configuration.baseUrl || !configuration.collection) throw new TypeError("AUTO_VECTOR_STORE_BASE_URL and AUTO_VECTOR_STORE_COLLECTION are required (WEAVIATE_URL/COLLECTION remain aliases).");
+  if (configuration.embedding.mode !== "native") throw new TypeError("Weaviate file ingestion uses native embeddings. For provided embeddings, use WeaviateVectorStore with the incremental facade.");
+  if (configuration.embedding.apiKey) throw new TypeError("Weaviate native embeddings use the cluster API key, not AUTO_EMBEDDING_API_KEY.");
   return new WeaviateKnowledgeBaseAdapter({
-    url,
-    collection,
-    apiKey: process.env.WEAVIATE_API_KEY,
-    model: process.env.WEAVIATE_EMBEDDING_MODEL?.trim() || "Snowflake/snowflake-arctic-embed-l-v2.0",
-    dimensions: integer("WEAVIATE_EMBEDDING_DIMENSIONS"),
-    baseURL: process.env.WEAVIATE_EMBEDDING_BASE_URL?.trim() || undefined,
-    timeoutMs: integer("WEAVIATE_TIMEOUT_MS"),
-    batchSize: integer("WEAVIATE_BATCH_SIZE"),
-    maxChunks: integer("WEAVIATE_MAX_CHUNKS"),
-    maxChunkCharacters: integer("WEAVIATE_MAX_CHUNK_CHARACTERS"),
-    verificationAttempts: integer("WEAVIATE_VERIFICATION_ATTEMPTS"),
-    verificationDelayMs: integer("WEAVIATE_VERIFICATION_DELAY_MS"),
+    url: configuration.baseUrl, collection: configuration.collection, apiKey: configuration.apiKey,
+    model: configuration.embedding.model ?? "Snowflake/snowflake-arctic-embed-l-v2.0",
+    dimensions: configuration.embedding.dimensions, baseURL: configuration.embedding.baseUrl,
+    timeoutMs: configuration.timeoutMs, batchSize: configuration.batchSize, maxChunks: configuration.maxChunks,
+    maxChunkCharacters: configuration.maxChunkCharacters,
+    verificationAttempts: configuration.verificationAttempts, verificationDelayMs: configuration.verificationDelayMs,
   });
 }
