@@ -37,6 +37,9 @@
   "files": [
     "dist",
     "README.md",
+    "README.pt.md",
+    "README.it.md",
+    "README.en.md",
     "docs/ingestion-strategies.md"
   ],
   "main": "./dist/index.js",

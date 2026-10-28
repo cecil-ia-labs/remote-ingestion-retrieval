@@ -1,5 +1,7 @@
 # Remote Ingestion Retrieval
 
+[Português](README.pt.md) | [Italiano](README.it.md) | [English](README.en.md)
+
 Biblioteca TypeScript para transformar URLs e websites em Markdown, dividir o conteúdo e inseri-lo em uma base de conhecimento. Inclui aquisição HTTP e por navegador, descoberta de páginas, metadados, limites de execução e sincronização incremental de vetores.
 
 O pacote oferece duas formas de armazenamento:
@@ -30,7 +32,7 @@ Esses contratos têm responsabilidades diferentes. Uma API de upload de arquivos
 | `AUTO_EMBEDDING_BASE_URL` / `AUTO_EMBEDDING_API_KEY` | Conexão de um serviço externo de embeddings, fornecida ao módulo do host. |
 | `AUTO_EMBEDDING_PROVIDER_MODULE` | Módulo que exporta `embeddingProvider` ou `createEmbeddingProvider(configuration)`. |
 
-Valores genéricos **não vazios** têm precedência sobre os aliases do provider selecionado. `WEAVIATE_URL`, `WEAVIATE_API_KEY`, `WEAVIATE_COLLECTION` e as opções `WEAVIATE_*` anteriores continuam como fallback para Weaviate. Os aliases equivalentes `QDRANT_URL`, `QDRANT_API_KEY`, `QDRANT_COLLECTION`, `QDRANT_EMBEDDING_MODEL`, `QDRANT_EMBEDDING_DIMENSIONS` e demais opções `QDRANT_*` também são aceitos. Nenhuma chave específica de outro provider é reutilizada. `QDRANT_DISTANCE` permanece específico, pois configura uma capacidade do Qdrant.
+Use as variáveis genéricas `AUTO_*` documentadas no [.env.example](.env.example). Os aliases legados foram removidos do exemplo e da referência de uso; a compatibilidade permanece no código. Nenhuma chave específica de outro provider é reutilizada. `QDRANT_DISTANCE` permanece como opção atual, pois configura a métrica da collection Qdrant.
 
 Ao migrar um `.env` antigo, remova valores genéricos antigos que apontem para outro serviço: eles agora têm precedência também no Weaviate. A implementação não altera seu arquivo `.env` nem migra credenciais automaticamente.
 
