@@ -61,8 +61,11 @@ import type {
 import {
   WebsiteUrlScope,
 } from "./website-url-scope.js";
+import { GitHubRepositoryDiscoveryService } from "../github/github-repository-discovery.js";
 
 export interface WebsiteDiscoveryServiceOptions {
+  githubToken?: string;
+  githubDiscovery?: GitHubRepositoryDiscoveryService;
   robotsResolver?:
     RobotsResolver;
 
@@ -136,6 +139,7 @@ function alwaysUsesCrawler(
 
 export class WebsiteDiscoveryService
   implements WebsiteDiscovery {
+  private readonly githubDiscovery: GitHubRepositoryDiscoveryService;
   private readonly robotsResolver:
     RobotsResolver;
 
@@ -168,6 +172,7 @@ export class WebsiteDiscoveryService
     options:
       WebsiteDiscoveryServiceOptions = {},
   ) {
+    this.githubDiscovery = options.githubDiscovery ?? new GitHubRepositoryDiscoveryService({ token: options.githubToken });
     this.robotsResolver =
       options.robotsResolver
       ?? new RobotsResolver();
@@ -227,6 +232,11 @@ export class WebsiteDiscoveryService
       stats;
 
     try {
+      if (source.options?.profile === "github-repository") {
+        try { yield* this.githubDiscovery.discover(source, signal); }
+        finally { stats.github = this.githubDiscovery.discoverySummary; }
+        return;
+      }
       yield* this.discoverInternal(
         source,
         stats,

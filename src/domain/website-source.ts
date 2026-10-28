@@ -7,6 +7,7 @@ import type {
   UrlCanonicalizationOptions,
   WebsiteDiscoveryStrategy,
 } from "./source.types.js";
+import type { GitHubRepositoryOptions } from "../github/github-repository.types.js";
 
 export interface CrawlOptions {
   maxPages?: number;
@@ -47,6 +48,8 @@ export interface CrawlOptions {
 
 export interface WebsiteSourceOptions
   extends RemoteSourceOptions {
+  profile?: "website" | "github-repository";
+  github?: GitHubRepositoryOptions;
   crawl?: CrawlOptions;
 }
 

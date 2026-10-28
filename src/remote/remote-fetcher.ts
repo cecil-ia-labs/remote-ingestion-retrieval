@@ -7,6 +7,8 @@ import type {
 } from "./fetched-resource.js";
 
 export interface FetchRemoteResourceOptions {
+  /** Extra request headers; only sent to the initial origin, never across origin redirects. */
+  headers?: Readonly<Record<string, string>>;
   /**
    * Maximum decoded body size in bytes.
    *

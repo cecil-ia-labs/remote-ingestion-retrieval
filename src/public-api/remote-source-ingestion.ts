@@ -262,7 +262,7 @@ export class RemoteSourceIngestion {
 
     const discovery =
       options.discovery
-      ?? new WebsiteDiscoveryService();
+      ?? new WebsiteDiscoveryService({ githubToken: options.githubToken });
 
     const stateStore =
       options.stateStore
@@ -295,6 +295,7 @@ export class RemoteSourceIngestion {
           });
 
         return new DefaultWebsiteDocumentMaterializer({
+          githubToken: options.githubToken,
           renderer,
 
           pdfProcessor:

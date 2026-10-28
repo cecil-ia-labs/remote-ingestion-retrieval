@@ -5,3 +5,5 @@ export * from "./local-metadata-enricher.js";
 export * from "./metadata-cache.js";
 
 export * from "./weaviate-knowledge-base-adapter.js";
+export * from "./knowledge-base-file-loader.js";
+export * from "./weaviate-search-adapter.js";

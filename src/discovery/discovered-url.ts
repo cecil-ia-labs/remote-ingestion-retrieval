@@ -2,9 +2,11 @@ export type DiscoveryMethod =
   | "root"
   | "robots"
   | "sitemap"
-  | "crawl";
+  | "crawl"
+  | "github";
 
 export interface DiscoveredUrl {
+  github?: import("../github/github-repository.types.js").GitHubFileProvenance;
   url: string;
 
   /**

@@ -5,6 +5,7 @@ import {
 
 import { StructuralMarkdownSplitter } from "../chunking/structural-markdown-splitter.js";
 import type { MarkdownSplitter } from "../chunking/markdown-splitter.js";
+import { isGitHubRepositoryUrl } from "../github/github-repository-discovery.js";
 
 import {
   mkdir,
@@ -297,7 +298,19 @@ async function withMarkdownSplitter(adapter: KnowledgeBaseVectorStoreAdapter): P
       }
       await writeFile(resolve(directory, "manifest.json"), JSON.stringify({ splitter: splitter.name, files: files.map(({ filename, metadata }) => ({ filename, metadata })) }, null, 2), "utf8");
       console.log(`Split knowledge files: ${files.length}; manifest: ${directory}/manifest.json`);
-      return adapter.ingest({ ...request, files, ...(process.env.AUTO_VECTOR_STORE_PROVIDER === "weaviate" ? { chunking: undefined } : {}) });
+      const result = await adapter.ingest({ ...request, files, ...(adapter.name === "weaviate-native-embeddings" ? { chunking: undefined } : {}) });
+      const expected = new Set(files.map((file) => file.filename));
+      if (!isKnowledgeBaseVectorStoreIngestResult(result) || result.files.length !== expected.size
+        || new Set(result.files.map((file) => file.filename)).size !== expected.size
+        || result.files.some((file) => !expected.has(file.filename))) {
+        throw new Error(`Vector store adapter "${adapter.name}" returned an incomplete split-file result.`);
+      }
+      return {
+        ...result,
+        files: request.files.map((file) => ({ filename: file.filename })),
+        splitFiles: result.files,
+        splitManifestPath: resolve(directory, "manifest.json"),
+      };
     },
   };
 }
@@ -337,6 +350,12 @@ function createSource(
   crawlConcurrency: number,
 ): WebsiteSource {
   const now = new Date();
+  const requestedProfile = process.env.SOURCE_PROFILE?.trim() || "auto";
+  if (!["auto", "website", "github-repository"].includes(requestedProfile)) throw new TypeError("SOURCE_PROFILE must be auto, website or github-repository.");
+  const profile = requestedProfile === "auto" ? (isGitHubRepositoryUrl(SOURCE_URL) ? "github-repository" : "website") : requestedProfile as "website" | "github-repository";
+  const includeCode = process.env.GITHUB_INCLUDE_CODE?.trim() || "false";
+  if (!["true", "false"].includes(includeCode)) throw new TypeError("GITHUB_INCLUDE_CODE must be true or false.");
+  const paths = (name: string): string[] | undefined => process.env[name]?.split(",").map((value) => value.trim()).filter(Boolean);
 
   return {
     id: SOURCE_ID,
@@ -346,6 +365,18 @@ function createSource(
     createdAt: now,
     updatedAt: now,
     options: {
+      profile,
+      ...(profile === "github-repository" ? { github: {
+        ref: process.env.GITHUB_REF?.trim() || undefined,
+        path: process.env.GITHUB_PATH?.trim() || undefined,
+        include: paths("GITHUB_INCLUDE"), exclude: paths("GITHUB_EXCLUDE"),
+        includeCode: includeCode === "true",
+        maxFiles: integerEnvironmentVariable("GITHUB_MAX_FILES", maxPages, 1),
+        maxFileBytes: integerEnvironmentVariable("GITHUB_MAX_FILE_BYTES", 5 * 1024 * 1024, 1),
+        maxApiRequests: integerEnvironmentVariable("GITHUB_MAX_API_REQUESTS", 200, 1),
+        maxApiResponseBytes: integerEnvironmentVariable("GITHUB_MAX_API_RESPONSE_BYTES", 16 * 1024 * 1024, 1),
+        maxTreeEntries: integerEnvironmentVariable("GITHUB_MAX_TREE_ENTRIES", 100_000, 1),
+      } } : {}),
       crawl: {
         discoveryStrategy: "sitemap-and-crawl",
         maxPages,
@@ -383,6 +414,7 @@ function toKnowledgeFile(
       domain: semantic.domain,
       tags: semantic.tags.join(","),
       keywords: semantic.keywords.join(","),
+      ...(document.metadata.attributes?.github ? { github: document.metadata.attributes.github } : {}),
       ...(document.title
         ? { title: document.title }
         : {}),
@@ -401,6 +433,13 @@ function toKnowledgeFile(
 
 function printHelp(): void {
   console.info(`Auto website-to-knowledge-base runner
+
+GitHub repository/tree/blob URLs select repository-file acquisition by default.
+SOURCE_PROFILE=website forces ordinary discovery; github-repository selects it explicitly.
+GITHUB_TOKEN is optional for public repositories; private repositories require Contents read.
+GITHUB_REF/GITHUB_PATH select a scope; GITHUB_INCLUDE/GITHUB_EXCLUDE are repository-relative globs.
+GITHUB_INCLUDE_CODE=true enables source files. See GITHUB_MAX_* and README for budgets.
+Weaviate: AUTO_VECTOR_STORE_PROVIDER=weaviate with WEAVIATE_URL/COLLECTION/API_KEY.
 
 Default adapter:
   OpenAI module at ../3_benchmarks/realtime-compare-mcp-x-function/MarkdownSplitter/
@@ -577,6 +616,7 @@ async function main(): Promise<void> {
     const runSignal = AbortSignal.timeout(maxElapsedMs);
     const discovery = await new WebsiteDiscoveryService({
       maxUrls: maxPages,
+      githubToken: process.env.GITHUB_TOKEN,
     }).collectReport(source, runSignal);
 
     discoveredUrls = discovery.urls;
@@ -585,6 +625,7 @@ async function main(): Promise<void> {
     browserManager = new PuppeteerBrowserManager();
 
     const materializer = new DefaultWebsiteDocumentMaterializer({
+      githubToken: process.env.GITHUB_TOKEN,
       artifactRootDirectory: MARKDOWN_ROOT,
       maxBytes: maxBytesPerDocument,
       timeoutMs,
@@ -851,7 +892,7 @@ async function main(): Promise<void> {
     }
   }
 
-  const partial = discoveredUrls.length >= maxPages
+  const partial = (discoveryStats?.github ? !discoveryStats.github.snapshotComplete : discoveredUrls.length >= maxPages)
     || (discoveryStats?.crawlPagesFailed ?? 0) > 0
     || materializationFailures.length > 0
     || Boolean(skipVectorUploadReason);
@@ -867,6 +908,8 @@ async function main(): Promise<void> {
     source: {
       id: SOURCE_ID,
       url: SOURCE_URL,
+      profile: source.options?.profile,
+      github: source.options?.github,
     },
     namespace,
     vectorStoreName,
@@ -887,6 +930,7 @@ async function main(): Promise<void> {
         filename: document.artifact?.filename,
         relativePath: document.artifact?.relativePath,
         contentHash: document.contentHash,
+        github: document.metadata.attributes?.github,
       })),
       failures: materializationFailures,
     },

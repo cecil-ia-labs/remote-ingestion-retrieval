@@ -224,6 +224,7 @@ export class HttpRemoteFetcher
             timeoutMs,
             userAgent,
             signal: options.signal,
+            headers: new URL(currentUrl).origin === new URL(resource.resolvedUrl).origin ? options.headers : undefined,
           },
         );
 
@@ -369,6 +370,7 @@ export class HttpRemoteFetcher
       timeoutMs: number;
       userAgent: string;
       signal?: AbortSignal;
+      headers?: Readonly<Record<string, string>>;
     },
   ): Promise<FetchResponse> {
     return new Promise(
@@ -396,6 +398,7 @@ export class HttpRemoteFetcher
 
                 Connection:
                   "close",
+                ...options.headers,
               },
             },
           );

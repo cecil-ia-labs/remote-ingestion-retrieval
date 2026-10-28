@@ -261,7 +261,104 @@ console.log(result.storeId, result.objects);
 
 `domain` é uma propriedade de tokenização `field`, adequada a igualdade exata. `tags` e `keywords` aceitam arrays ou strings separadas por vírgula; o adapter os persiste como arrays. A proveniência completa é conservada em `metadataJson`.
 
-O `inx-voice-assistant-inxide` consultado usa `/vector_stores/{id}/search` da API OpenAI e filtros exatos por domínio. Uma collection Weaviate não substitui diretamente esse ID. O consumidor precisa de um adapter de busca Weaviate que mantenha o filtro de namespace/domínio e converta objetos em resultados com texto e proveniência. Esta biblioteca implementa ingestão; não altera os serviços inx nem sua API de busca.
+O `inx-voice-assistant-inxide` consultado usa `/vector_stores/{id}/search` da API OpenAI e filtros exatos por domínio. Uma collection Weaviate não substitui diretamente esse ID. O `WeaviateSearchAdapter` incluído mantém os filtros de namespace/domínio e converte os objetos em resultados com texto e proveniência; o host precisa selecionar esse adapter no caminho de busca. Os serviços inx não são alterados por esta biblioteca.
+
+## Upload de arquivos existentes ao Weaviate
+
+Para enviar Markdown/texto já salvo, sem repetir o crawl, configure `WEAVIATE_URL`, `WEAVIATE_COLLECTION` e a chave do cluster em `.env`:
+
+```bash
+npm run upload:weaviate -- --namespace support --domain billing ./kb/01_billing.md
+```
+
+Também é possível reutilizar os arquivos e metadados de um manifest gerado pelo runner:
+
+```bash
+npm run upload:weaviate -- --namespace support --manifest ./kb/source/split/run/manifest.json
+```
+
+O manifest deve conter `files: [{ filename, metadata }]`; cada arquivo fica ao lado dele. A seleção por caminhos aceita `.md`, `.markdown` e `.txt` UTF-8. Os limites padrão são 100 arquivos, 5 MiB por arquivo e 50 MiB no total, ajustáveis por `AUTO_MAX_KB_FILES`, `AUTO_MAX_BYTES_PER_DOCUMENT` e `AUTO_MAX_KB_BYTES`. O adapter também limita a 10.000 chunks antes de chamar embeddings, configuráveis por `WEAVIATE_MAX_CHUNKS` ou `maxChunks` no construtor. `--report` escolhe o caminho do relatório; o padrão é `data/weaviate-uploads/<id>.json`.
+
+Na API, use `adapter.ingestFiles({ name, namespace, files: [{ path, filename?, metadata? }], signal? })`, ou `loadKnowledgeBaseFiles()` para carregar os arquivos antes de chamar outro adapter. PDFs e outros formatos binários precisam passar pela aquisição/conversão antes desse upload.
+
+No Weaviate, o conteúdo dos arquivos é importado como objetos com texto e metadados; o vectorizer gera os embeddings durante a gravação. Depois dos lotes, o adapter lê cada objeto com seu vetor, confere texto/proveniência e exige vetores não vazios, finitos e com dimensões consistentes. O resultado contém IDs reais dos chunks por arquivo, hashes, bytes e o resumo `verification`. Somente após essa conferência o upload é considerado concluído. `WEAVIATE_VERIFICATION_ATTEMPTS` (3, entre 1 e 10) e `WEAVIATE_VERIFICATION_DELAY_MS` (250) controlam as tentativas.
+
+O relatório do runner conserva `files` para os documentos originais e `splitFiles`, `objects` e `splitManifestPath` para os arquivos efetivamente enviados e os objetos persistidos. Assim, a mudança de nomes causada pelo splitter não é tratada como falha de upload.
+
+## Busca Weaviate para consumidores inx
+
+`WeaviateSearchAdapter` consulta pelo SDK oficial/gRPC e devolve `{ data, has_more: false }`. Cada resultado contém `file_id`, `filename`, `score`, `distance`, `attributes` e `content: [{ type: "text", text }]`.
+
+```ts
+import weaviate from "weaviate-client";
+import { connectWeaviateSearch } from "remote-ingestion-retrieval";
+
+const search = await connectWeaviateSearch({
+  collection: "SupportKnowledge",
+  connection: {
+    mode: "cloud",
+    url: process.env.WEAVIATE_URL!,
+    options: { authCredentials: new weaviate.ApiKey(process.env.WEAVIATE_API_KEY!) },
+  },
+});
+try {
+  const results = await search.search({
+    query: "Como pagar a fatura?",
+    namespace: "support",
+    domain: "billing",
+    limit: 5,
+  });
+  console.log(results.data);
+} finally {
+  await search.close();
+}
+```
+
+O namespace é obrigatório; domínio é um filtro opcional de igualdade exata. A busca usa `nearText` para vetorização nativa. Para collections de vetores pré-calculados, injete o mesmo `EmbeddingProvider` da ingestão para usar `nearVector`. Conexões próprias e portas HTTP/gRPC são configuráveis por `connection: { mode: "custom", options }`; um client já existente pode ser injetado diretamente no construtor.
+
+`score` é a distância vetorial negativa: maior é melhor, e não representa uma probabilidade nem a escala de scores da OpenAI. Ajuste eventuais thresholds no consumidor. A integração fornece o adapter e o formato de resultados; o roteamento do serviço inx para esse adapter continua sendo configuração/integração do host. O SDK/gRPC evita depender de [GraphQL descontinuado ou da REST Search em preview](https://docs.weaviate.io/weaviate/api/graphql/migration).
+
+## Aquisição de repositórios GitHub
+
+O runner reconhece URLs de repositório, `/tree/` e `/blob/` do GitHub e escolhe a aquisição de arquivos automaticamente. Para selecionar explicitamente, use `SOURCE_PROFILE=github-repository`; `SOURCE_PROFILE=website` força o crawler convencional.
+
+```dotenv
+SOURCE_URL=https://github.com/qdrant/qdrant
+SOURCE_ID=githubqdrant
+SOURCE_PROFILE=github-repository
+GITHUB_TOKEN=
+GITHUB_INCLUDE_CODE=false
+GITHUB_MAX_FILES=100
+GITHUB_MAX_API_REQUESTS=200
+```
+
+Execute `npm run ingest` com o adapter de destino configurado. A entrada não consulta sitemap nem páginas sociais do GitHub. A referência é resolvida para um commit no início; a árvore desse commit produz os candidatos. Os downloads usam blobs brutos pelo SHA, com conferência do hash Git e do tamanho. A ordem favorece README da raiz, documentação, referências de API e exemplos. Não executa código nem segue links da interface ou links externos.
+
+No uso como biblioteca, a seleção é explícita na fonte:
+
+```ts
+const source = {
+  id: "qdrant-docs", type: "website" as const,
+  url: "https://github.com/qdrant/qdrant",
+  createdAt: new Date(), updatedAt: new Date(),
+  options: {
+    profile: "github-repository" as const,
+    github: { ref: "master", path: "docs", includeCode: false, maxFiles: 100 },
+    crawl: { maxPages: 100, concurrency: 3 },
+  },
+};
+// Passe githubToken nas opções de RemoteSourceIngestion, fora dos metadados da fonte.
+```
+
+Use uma referência e um caminho que existam no repositório selecionado. `GITHUB_REF` e `GITHUB_PATH` permitem definir esse escopo no runner. Sem referência, usa a branch padrão. Referências com barras em URLs tree/blob são resolvidas pela API, sem assumir que apenas o primeiro segmento seja a branch.
+
+`GITHUB_INCLUDE` e `GITHUB_EXCLUDE` aceitam listas de globs de caminhos relativos ao repositório, separadas por vírgula, como `docs/**,README.md`. Código-fonte exige `GITHUB_INCLUDE_CODE=true`. Arquivos binários, lockfiles, gerados, dependências, submódulos e symlinks ficam excluídos. Ponteiros Git LFS e conteúdos binários inesperados geram falha de materialização, sem indexar o ponteiro como documento.
+
+Os limites são `GITHUB_MAX_FILES` (100), `GITHUB_MAX_FILE_BYTES` (5 MiB), `GITHUB_MAX_API_REQUESTS` (200, contando enumeração e reservando os downloads), `GITHUB_MAX_API_RESPONSE_BYTES` (16 MiB por resposta) e `GITHUB_MAX_TREE_ENTRIES` (100.000). O limite de páginas da fonte também restringe os arquivos. Para repositórios privados, use um token com permissão de leitura de Contents; ele só vai para `api.github.com`, sem redirects, e não é persistido nos metadados. Sem token, aplicam-se os limites públicos da API GitHub.
+
+Árvores recursivas truncadas acionam enumeração de subárvores. Se ainda houver truncamento ou esgotamento de orçamento, o snapshot fica parcial. O relatório registra commit, escopo, candidatos elegíveis, selecionados, pendentes, chamadas e amostras dos caminhos ignorados com os motivos. Os documentos carregam `{ owner, repo, ref, commitSha, path, blobSha }`; a identidade usa referência/caminho estáveis entre commits, enquanto a aquisição usa o blob fixado. As proteções existentes de DNS, bytes, tempo e cancelamento também se aplicam à API GitHub.
+
+Snapshots parciais não autorizam apagar documentos não observados na sincronização incremental. A mesma proteção agora trata o limite de páginas de websites convencionais de forma conservadora.
 
 ## APIs e extensão
 
