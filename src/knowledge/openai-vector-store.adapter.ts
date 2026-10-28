@@ -87,6 +87,7 @@ export function createOpenAIVectorStoreAdapter(
 ): KnowledgeBaseVectorStoreAdapter {
   return {
     name,
+    supportsResume: true,
 
     async ingest(
       request: KnowledgeBaseVectorStoreIngestRequest,
@@ -119,6 +120,7 @@ export function createOpenAIVectorStoreAdapter(
           uploadConcurrency: request.uploadConcurrency,
           signal: request.signal,
           onProgress: request.onProgress,
+          resume: request.resume,
         },
       );
 

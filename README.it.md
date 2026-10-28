@@ -457,7 +457,7 @@ Le strategie GitHub e di deduplicazione sono in [Strategie di individuazione e d
 
 ## Verifica locale
 
-L'adapter OpenAI associa i file singolarmente e in sequenza, con `attributes` e `chunking_strategy` nella stessa richiesta, seguendo inx-nlp. Poi recupera tutti i file e confronta i valori persistiti; `0/0` non viene accettato come successo. `ingest` e `upload:vector-store` inoltrano le stesse opzioni di token e concorrenza.
+L'adapter OpenAI associa i file con richieste individuali e concorrenza limitata da `AUTO_UPLOAD_CONCURRENCY` (predefinito 4), inviando `attributes` e `chunking_strategy` nella stessa richiesta. Poi recupera tutti i file e confronta i valori persistiti; `0/0` non viene accettato come successo. `ingest` e `upload:vector-store` inoltrano le stesse opzioni di token e concorrenza.
 
 Gli ID remoti vengono registrati durante l'esecuzione in `<report>.progress.json` e in `providerProgress`, anche se la verifica successiva fallisce. Prima di ripetere un'esecuzione con risorse già create, consultare il checkpoint: un nuovo tentativo OpenAI potrebbe creare un altro store.
 
@@ -467,3 +467,18 @@ npm run build
 ```
 
 Questi comandi verificano tipi e compilazione. Non eseguono ingestione, generazione di embedding, scritture nei cluster o ricerche reali.
+
+
+## Riprendere un upload che ha già creato risorse remote
+
+Se un upload si è interrotto dopo la creazione del Vector Store o l'invio dei file, usare `--resume-upload-report` con il report dell'upload. Il flusso riutilizza lo stesso store e tutti i 195 file già inviati nell'esecuzione di esempio, verifica prima i file associati e associa soltanto quelli pendenti. Non ripete upload dei file, crawl, arricchimento dei metadati o splitting.
+
+```bash
+AUTO_UPLOAD_MAX_ELAPSED_MS=3600000 AUTO_UPLOAD_CONCURRENCY=4 npm run upload:vector-store -- --resume-upload-report ./data/vector-store-uploads/openai-compatible/6dbbd497-6cf8-426a-90a2-c301305aad6f.json
+```
+
+`AUTO_UPLOAD_CONCURRENCY` (predefinito 4) limita sia gli upload alla Files API sia le richieste individuali di associazione; non usa l'endpoint batch. Rimane attiva la verifica rigorosa dei metadati e del chunking statico persistiti per ogni file.
+
+`AUTO_UPLOAD_MAX_ELAPSED_MS` controlla il timeout dell'upload autonomo e della ripresa. La precedenza è: valore specifico dell'upload, poi `AUTO_MAX_ELAPSED_MS` se impostato, infine 3600000 ms quando entrambi sono assenti. Il limite globale predefinito di `npm run ingest` resta 600000 ms. Impostare soltanto `AUTO_MAX_ELAPSED_MS=600000` limita anche l'upload autonomo a dieci minuti; il comando sopra consente esplicitamente un'ora.
+
+La ripresa è una funzionalità implementata; questa documentazione non afferma che sia stata convalidata una nuova esecuzione remota.

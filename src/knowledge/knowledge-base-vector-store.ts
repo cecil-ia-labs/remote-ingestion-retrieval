@@ -18,6 +18,7 @@ export interface KnowledgeBaseVectorStoreChunking {
 }
 
 export interface KnowledgeBaseVectorStoreIngestRequest {
+  readonly resume?: KnowledgeBaseVectorStoreResume;
   /** Durable checkpoints let the host retain remote IDs even if verification fails. */
   readonly onProgress?: (progress: KnowledgeBaseVectorStoreProgress) => void | Promise<void>;
   readonly name: string;
@@ -28,6 +29,12 @@ export interface KnowledgeBaseVectorStoreIngestRequest {
   readonly uploadConcurrency?: number;
   readonly metadata?: KnowledgeBaseFileMetadata;
   readonly signal?: AbortSignal;
+}
+
+export interface KnowledgeBaseVectorStoreResume {
+  readonly storeId: string;
+  readonly storeName?: string;
+  readonly files: readonly { readonly filename: string; readonly id: string }[];
 }
 
 export interface KnowledgeBaseVectorStoreProgress {
@@ -55,6 +62,7 @@ export interface KnowledgeBaseVectorStoreIngestResult {
  * This is separate from VectorStore, which accepts precomputed vectors.
  */
 export interface KnowledgeBaseVectorStoreAdapter {
+  readonly supportsResume?: boolean;
   /** False when the adapter performs local splitting instead of server-side token chunking. */
   readonly supportsTokenChunking?: boolean;
   readonly name: string;

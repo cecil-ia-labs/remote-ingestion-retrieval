@@ -430,7 +430,7 @@ See [Discovery and deduplication strategies](docs/ingestion-strategies.md) for t
 
 ## Local validation
 
-The OpenAI adapter attaches files individually and sequentially, sending `attributes` and `chunking_strategy` together, then reads every file to verify persisted values. `0/0` is not accepted as success. Both runners forward token/concurrency options. Remote IDs are checkpointed during ingestion in `<report>.progress.json` and `providerProgress`, even if later verification fails. Inspect checkpoints before resending; another attempt can create another OpenAI store.
+The OpenAI adapter attaches files through individual requests with concurrency bounded by `AUTO_UPLOAD_CONCURRENCY` (default 4), sending `attributes` and `chunking_strategy` together, then reads every file to verify persisted values. `0/0` is not accepted as success. Both runners forward token/concurrency options. Remote IDs are checkpointed during ingestion in `<report>.progress.json` and `providerProgress`, even if later verification fails. Inspect checkpoints before resending; another attempt can create another OpenAI store.
 
 ```bash
 npm run typecheck
@@ -438,3 +438,18 @@ npm run build
 ```
 
 These commands check types and compilation. They do not execute ingestion, generate embeddings, write collections, or perform live provider searches.
+
+
+## Resume an upload that already created remote resources
+
+If an upload stopped after creating a Vector Store or uploading files, use `--resume-upload-report` with the upload report. This flow reuses the same store and all 195 files already uploaded in the example run, validates attached files first, and attaches only pending files. It does not repeat file uploads, crawling, metadata enrichment, or splitting.
+
+```bash
+AUTO_UPLOAD_MAX_ELAPSED_MS=3600000 AUTO_UPLOAD_CONCURRENCY=4 npm run upload:vector-store -- --resume-upload-report ./data/vector-store-uploads/openai-compatible/6dbbd497-6cf8-426a-90a2-c301305aad6f.json
+```
+
+`AUTO_UPLOAD_CONCURRENCY` (default 4) bounds both Files API uploads and individual file-attachment requests; it does not use the batch endpoint. Strict per-file metadata and static chunking readback remains enabled.
+
+`AUTO_UPLOAD_MAX_ELAPSED_MS` sets the standalone upload/resume deadline. Precedence is: the upload-specific value, then `AUTO_MAX_ELAPSED_MS` when defined, then 3600000 ms when both are absent. The default global deadline for `npm run ingest` remains 600000 ms. Setting only `AUTO_MAX_ELAPSED_MS=600000` also limits standalone upload to ten minutes; the command above explicitly allows one hour.
+
+Resume is an implemented capability; this documentation does not claim that a new remote run has been validated.

@@ -485,7 +485,7 @@ As estratégias para repositórios GitHub e deduplicação estão em [Estratégi
 
 ## Validação local
 
-O adapter OpenAI associa os arquivos individualmente e em sequência, com `attributes` e `chunking_strategy` no mesmo pedido, seguindo o inx-nlp. Depois lê todos os arquivos e confere os valores persistidos; um retorno `0/0` não é aceito como sucesso. `ingest` e `upload:vector-store` encaminham as mesmas opções de tokens e concorrência. IDs remotos são registrados durante a operação em `<relatório>.progress.json` e em `providerProgress`, mesmo se a verificação posterior falhar. Antes de reenviar uma execução que já criou recursos, consulte esse checkpoint; uma nova tentativa pode criar outro store no OpenAI.
+O adapter OpenAI associa os arquivos em pedidos individuais, com concorrência limitada por `AUTO_UPLOAD_CONCURRENCY` (padrão 4), enviando `attributes` e `chunking_strategy` no mesmo pedido. Depois lê todos os arquivos e confere os valores persistidos; um retorno `0/0` não é aceito como sucesso. `ingest` e `upload:vector-store` encaminham as mesmas opções de tokens e concorrência. IDs remotos são registrados durante a operação em `<relatório>.progress.json` e em `providerProgress`, mesmo se a verificação posterior falhar. Antes de reenviar uma execução que já criou recursos, consulte esse checkpoint; uma nova tentativa pode criar outro store no OpenAI.
 
 ```bash
 npm run typecheck
@@ -493,3 +493,18 @@ npm run build
 ```
 
 Esses comandos verificam tipos e compilação. Não executam ingestão, geração de embeddings, gravação em collections ou busca real no provider.
+
+
+## Retomar um upload que já criou recursos remotos
+
+Se um upload foi interrompido depois de criar o Vector Store ou enviar arquivos, use `--resume-upload-report` com o relatório do upload. Esse fluxo reutiliza o mesmo store e todos os 195 arquivos já enviados na execução de exemplo, verifica primeiro os arquivos associados e associa somente os pendentes. Não repete upload dos arquivos, crawl, enriquecimento de metadados nem splitter.
+
+```bash
+AUTO_UPLOAD_MAX_ELAPSED_MS=3600000 AUTO_UPLOAD_CONCURRENCY=4 npm run upload:vector-store -- --resume-upload-report ./data/vector-store-uploads/openai-compatible/6dbbd497-6cf8-426a-90a2-c301305aad6f.json
+```
+
+`AUTO_UPLOAD_CONCURRENCY` (padrão 4) limita tanto o upload à Files API quanto as associações individuais; não usa o endpoint de batch. A conferência estrita dos metadados e do chunking estático de cada arquivo permanece ativa.
+
+`AUTO_UPLOAD_MAX_ELAPSED_MS` controla o prazo do upload isolado e da retomada. A precedência é: valor específico do upload, depois `AUTO_MAX_ELAPSED_MS` quando definido, depois 3600000 ms quando ambos estão ausentes. O prazo global de `npm run ingest` continua sendo 600000 ms por padrão. Um `AUTO_MAX_ELAPSED_MS=600000` sem a opção específica limita o upload isolado a dez minutos; o comando acima define uma hora explicitamente.
+
+A retomada é uma capacidade implementada; esta documentação não afirma que uma nova execução remota tenha sido validada.
