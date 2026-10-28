@@ -5,6 +5,7 @@ import {
 import { loadKnowledgeBaseMarkdownSplitter, splitKnowledgeBaseFiles } from "../knowledge/split-knowledge-base-files.js";
 import { isGitHubRepositoryUrl } from "../github/github-repository-discovery.js";
 import { createKnowledgeBaseVectorStoreAdapter } from "../knowledge/vector-store-provider-factory.js";
+import { createVectorStoreProgressRecorder } from "./vector-store-progress.js";
 
 import {
   mkdir,
@@ -359,8 +360,8 @@ Embeddings: AUTO_EMBEDDING_MODE=native|provided, AUTO_EMBEDDING_MODEL/DIMENSIONS
 Provided mode loads AUTO_EMBEDDING_PROVIDER_MODULE; native Qdrant requires Cloud Inference.
 
 Default adapter:
-  OpenAI module at ../3_benchmarks/realtime-compare-mcp-x-function/MarkdownSplitter/
-  openai-vector-store.adapter.ts (uses OPENAI_API_KEY from .env)
+  Bundled OpenAI adapter in src/knowledge/openai-vector-store.adapter.ts.
+  Uses AUTO_VECTOR_STORE_API_KEY or OPENAI_API_KEY for the official endpoint.
 
 Optional provider override:
   AUTO_VECTOR_STORE_ADAPTER_MODULE  .mjs/.ts module exporting vectorStoreAdapter
@@ -400,6 +401,7 @@ async function main(): Promise<void> {
   const vectorStoreName = process.env.AUTO_VECTOR_STORE_NAME?.trim()
     || SOURCE_TITLE;
   const reportPath = resolve(REPORT_ROOT, `${runId}.json`);
+  const progress = createVectorStoreProgressRecorder(`${reportPath}.progress.json`);
   const mode = metadataMode();
 
   const maxPages = integerEnvironmentVariable(
@@ -764,6 +766,7 @@ async function main(): Promise<void> {
           chunkOverlapTokens,
         },
         uploadConcurrency,
+        onProgress: progress.record,
         signal: runSignal,
         metadata: {
           source_id: SOURCE_ID,
@@ -879,6 +882,8 @@ async function main(): Promise<void> {
     },
     knowledgeBaseManifest: fileManifest,
     vectorStore: vectorStoreResult,
+    providerProgress: progress.snapshot(),
+    providerProgressPath: progress.path,
     vectorUploadSkippedBecause: skipVectorUploadReason,
     failure,
   };

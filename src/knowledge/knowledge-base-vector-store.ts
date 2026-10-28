@@ -18,6 +18,8 @@ export interface KnowledgeBaseVectorStoreChunking {
 }
 
 export interface KnowledgeBaseVectorStoreIngestRequest {
+  /** Durable checkpoints let the host retain remote IDs even if verification fails. */
+  readonly onProgress?: (progress: KnowledgeBaseVectorStoreProgress) => void | Promise<void>;
   readonly name: string;
   readonly description?: string;
   readonly namespace: string;
@@ -26,6 +28,13 @@ export interface KnowledgeBaseVectorStoreIngestRequest {
   readonly uploadConcurrency?: number;
   readonly metadata?: KnowledgeBaseFileMetadata;
   readonly signal?: AbortSignal;
+}
+
+export interface KnowledgeBaseVectorStoreProgress {
+  readonly stage: "store-created" | "file-uploaded" | "file-attached" | "file-verified";
+  readonly storeId: string;
+  readonly storeName?: string;
+  readonly file?: { readonly filename: string; readonly id: string };
 }
 
 export interface KnowledgeBaseVectorStoreFileResult {

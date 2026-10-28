@@ -7,6 +7,7 @@
     "@mozilla/readability": "^0.6.0",
     "@truto/turndown-plugin-gfm": "^1.0.3",
     "jsdom": "^30.0.1",
+    "openai": "^7.45.0",
     "puppeteer": "^25.11.0",
     "saxes": "^6.0.0",
     "turndown": "^7.2.4",

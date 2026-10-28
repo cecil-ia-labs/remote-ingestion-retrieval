@@ -7,6 +7,7 @@ import { resolveVectorStoreProviderConfiguration, type VectorStoreProvider } fro
 import { loadKnowledgeBaseFiles, type LocalKnowledgeBaseFile } from "../knowledge/knowledge-base-file-loader.js";
 import type { JsonValue } from "../domain/source.types.js";
 import { loadKnowledgeBaseMarkdownSplitter, splitKnowledgeBaseFiles } from "../knowledge/split-knowledge-base-files.js";
+import { createVectorStoreProgressRecorder } from "./vector-store-progress.js";
 
 function record(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -19,10 +20,10 @@ function json(value: unknown): value is JsonValue {
     || (record(value) && Object.values(value).every(json));
 }
 
-function integer(name: string, fallback: number): number {
+function integer(name: string, fallback: number, minimum = 1, maximum = Number.MAX_SAFE_INTEGER): number {
   const value = process.env[name]?.trim();
   const parsed = value ? Number(value) : fallback;
-  if (!Number.isSafeInteger(parsed) || parsed < 1) throw new TypeError(`${name} must be a positive safe integer.`);
+  if (!Number.isSafeInteger(parsed) || parsed < minimum || parsed > maximum) throw new TypeError(`${name} must be an integer from ${minimum} to ${maximum}.`);
   return parsed;
 }
 
@@ -55,6 +56,7 @@ async function manifestInputs(path: string, ingestionReport = false): Promise<Sa
     if (!record(parsed) || typeof parsed.markdownDirectory !== "string" || !Array.isArray(parsed.knowledgeBaseManifest)
       || !record(parsed.materialization) || !Array.isArray(parsed.materialization.succeeded)) throw new TypeError("Invalid ingestion report: saved Markdown and metadata manifest are required.");
     if (parsed.vectorStore !== null && parsed.vectorStore !== undefined) throw new Error("The ingestion report already contains a vector-store result; automatic resend was refused.");
+    if (record(parsed.providerProgress) && parsed.providerProgress.storeId) throw new Error("The ingestion report already contains remote resources; inspect its providerProgressPath before resending.");
     const root = resolve(parsed.markdownDirectory);
     const saved = new Map<string, { path: string; hash: string }>();
     for (const item of parsed.materialization.succeeded as unknown[]) {
@@ -101,6 +103,7 @@ export async function runVectorStoreUpload(providerOverride?: VectorStoreProvide
   const configuration = resolveVectorStoreProviderConfiguration(process.env, providerOverride);
   const reportPath = resolve(values.report ?? (providerOverride === "weaviate" ? `data/weaviate-uploads/${randomUUID()}.json` : `data/vector-store-uploads/${configuration.provider}/${randomUUID()}.json`));
   const startedAt = new Date().toISOString();
+  const progress = createVectorStoreProgressRecorder(`${reportPath}.progress.json`);
   let splitManifestPath = values.manifest ? resolve(values.manifest) : undefined;
   try {
     const adapter = await createKnowledgeBaseVectorStoreAdapter(configuration);
@@ -130,13 +133,19 @@ export async function runVectorStoreUpload(providerOverride?: VectorStoreProvide
     const result = await adapter.ingest({
       name: values.name ?? process.env.AUTO_VECTOR_STORE_NAME ?? saved.name ?? configuration.collection ?? namespace,
       namespace, files, signal,
+      uploadConcurrency: integer("AUTO_UPLOAD_CONCURRENCY", 4, 1, 32),
+      ...(adapter.supportsTokenChunking === false ? {} : { chunking: {
+        maxChunkSizeTokens: integer("AUTO_MAX_CHUNK_SIZE_TOKENS", 1600),
+        chunkOverlapTokens: integer("AUTO_CHUNK_OVERLAP_TOKENS", 200, 0),
+      } }),
+      onProgress: progress.record,
     });
     await mkdir(dirname(reportPath), { recursive: true });
-    await writeFile(reportPath, JSON.stringify({ status: "completed", namespace, startedAt, finishedAt: new Date().toISOString(), splitManifestPath, sourceIngestionReport: values["ingestion-report"], vectorStore: result }, null, 2), "utf8");
+    await writeFile(reportPath, JSON.stringify({ status: "completed", namespace, startedAt, finishedAt: new Date().toISOString(), splitManifestPath, sourceIngestionReport: values["ingestion-report"], vectorStore: result, providerProgress: progress.snapshot(), providerProgressPath: progress.path }, null, 2), "utf8");
     console.info(`Vector store upload completed (${configuration.provider}): ${reportPath}`);
   } catch (error) {
     await mkdir(dirname(reportPath), { recursive: true });
-    await writeFile(reportPath, JSON.stringify({ status: "failed", namespace, startedAt, finishedAt: new Date().toISOString(), splitManifestPath, sourceIngestionReport: values["ingestion-report"], error: error instanceof Error ? error.message : String(error) }, null, 2), "utf8");
+    await writeFile(reportPath, JSON.stringify({ status: "failed", namespace, startedAt, finishedAt: new Date().toISOString(), splitManifestPath, sourceIngestionReport: values["ingestion-report"], providerProgress: progress.snapshot(), providerProgressPath: progress.path, error: error instanceof Error ? error.message : String(error) }, null, 2), "utf8");
     console.error(`Vector store upload failed (${configuration.provider}): ${reportPath}`);
     throw error;
   }

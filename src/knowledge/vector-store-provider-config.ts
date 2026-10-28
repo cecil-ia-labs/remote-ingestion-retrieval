@@ -65,7 +65,7 @@ export function resolveVectorStoreProviderConfiguration(
   if (!["Cosine", "Dot", "Euclid", "Manhattan"].includes(distance)) throw new TypeError("QDRANT_DISTANCE must be Cosine, Dot, Euclid or Manhattan.");
   return {
     provider, baseUrl,
-    apiKey: value("AUTO_VECTOR_STORE_API_KEY", ...(prefix ? [`${prefix}_API_KEY`] : []), ...(provider === "openai-compatible" ? ["OPENAI_API_KEY"] : [])),
+    apiKey: value("AUTO_VECTOR_STORE_API_KEY", ...(prefix ? [`${prefix}_API_KEY`] : []), ...(provider === "openai-compatible" && (!baseUrl || new URL(baseUrl).origin === "https://api.openai.com") ? ["OPENAI_API_KEY"] : [])),
     collection: withAlias("AUTO_VECTOR_STORE_COLLECTION", "COLLECTION"),
     adapterModule,
     timeoutMs: integer("AUTO_VECTOR_STORE_TIMEOUT_MS", legacy("TIMEOUT_MS"), 30_000)!,

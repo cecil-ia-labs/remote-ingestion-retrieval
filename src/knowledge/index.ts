@@ -12,3 +12,4 @@ export * from "./qdrant-search-adapter.js";
 export * from "./vector-store-provider-config.js";
 export * from "./vector-store-provider-factory.js";
 export * from "./split-knowledge-base-files.js";
+export { createOpenAIVectorStoreAdapter } from "./openai-vector-store.adapter.js";

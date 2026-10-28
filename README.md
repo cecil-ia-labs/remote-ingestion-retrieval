@@ -143,7 +143,7 @@ Os limites de tempo e aquisição também podem ser ajustados com `AUTO_MAX_ELAP
 
 O modo local deriva `domain`, `tags` e `keywords` do conteúdo e da hierarquia das páginas. O modo de modelo mantém cache por provider, domínio, URL e hash; seus limites são `AUTO_METADATA_MAX_REQUESTS` (100), `AUTO_METADATA_MAX_INPUT_CHARS` (3.000.000), `AUTO_METADATA_MAX_CHARS`, `AUTO_METADATA_MODEL` e `AUTO_METADATA_CONCURRENCY`. Os limites de requisições e caracteres não são um teto monetário.
 
-Os providers integrados `weaviate` e `qdrant` têm precedência sobre `AUTO_VECTOR_STORE_ADAPTER_MODULE`. Os modos `custom` e `openai-compatible` usam o loader de módulos. O fallback OpenAI e o enricher de modelo legados apontam para o projeto irmão `../3_benchmarks/realtime-compare-mcp-x-function/MarkdownSplitter/`; para usar esses caminhos em outro checkout, forneça os módulos explicitamente. Os fluxos nativos Weaviate/Qdrant com metadados locais e splitter estrutural funcionam sem esses módulos.
+Os providers integrados `weaviate` e `qdrant` têm precedência sobre `AUTO_VECTOR_STORE_ADAPTER_MODULE`. O modo `openai-compatible` usa o adapter OpenAI incluído neste projeto quando não há módulo explícito; `custom` usa um módulo fornecido pelo host. Apenas o enricher de modelo legado ainda tem fallback no projeto irmão `../3_benchmarks/realtime-compare-mcp-x-function/MarkdownSplitter/`; configure `AUTO_METADATA_ENRICHER_MODULE` em outros checkouts. Os fluxos com metadados locais e splitter estrutural funcionam sem esse módulo externo.
 
 ## MarkdownSplitter
 
@@ -482,6 +482,8 @@ A aquisição mantém as proteções de URL, DNS e redirects, limites de bytes/t
 As estratégias para repositórios GitHub e deduplicação estão em [Estratégias de descoberta e deduplicação](docs/ingestion-strategies.md), com as evidências dos casos `githubqdrant` e `giassi`, contenções disponíveis e propostas de implementação.
 
 ## Validação local
+
+O adapter OpenAI associa os arquivos individualmente e em sequência, com `attributes` e `chunking_strategy` no mesmo pedido, seguindo o inx-nlp. Depois lê todos os arquivos e confere os valores persistidos; um retorno `0/0` não é aceito como sucesso. `ingest` e `upload:vector-store` encaminham as mesmas opções de tokens e concorrência. IDs remotos são registrados durante a operação em `<relatório>.progress.json` e em `providerProgress`, mesmo se a verificação posterior falhar. Antes de reenviar uma execução que já criou recursos, consulte esse checkpoint; uma nova tentativa pode criar outro store no OpenAI.
 
 ```bash
 npm run typecheck

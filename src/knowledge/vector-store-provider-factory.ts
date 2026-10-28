@@ -54,8 +54,11 @@ export async function createKnowledgeBaseVectorStoreAdapter(
       verificationAttempts: configuration.verificationAttempts, verificationDelayMs: configuration.verificationDelayMs,
     });
   }
-  const modulePath = configuration.adapterModule ?? (configuration.provider === "openai-compatible"
-    ? resolve("..", "3_benchmarks", "realtime-compare-mcp-x-function", "MarkdownSplitter", "openai-vector-store.adapter.ts") : undefined);
+  if (configuration.provider === "openai-compatible" && !configuration.adapterModule) {
+    const { createVectorStoreAdapter } = await import("./openai-vector-store.adapter.js");
+    return createVectorStoreAdapter(configuration);
+  }
+  const modulePath = configuration.adapterModule;
   if (!modulePath) throw new TypeError("AUTO_VECTOR_STORE_ADAPTER_MODULE is required for a custom provider.");
   const module: unknown = await import(pathToFileURL(resolve(modulePath)).href);
   if (!record(module)) throw new TypeError("Invalid vector store adapter module.");
