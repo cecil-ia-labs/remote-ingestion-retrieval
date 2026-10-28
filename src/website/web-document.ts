@@ -53,7 +53,8 @@ export interface WebDocumentDiscoveryProvenance {
     "root"
     | "robots"
     | "sitemap"
-    | "crawl";
+    | "crawl"
+    | "github";
 
   url:
     string;

@@ -86,8 +86,10 @@ import type {
 import type {
   WebsiteDocumentMaterializer,
 } from "./website-document-materializer.js";
+import { GitHubRepositoryMaterializer } from "../github/github-repository-materializer.js";
 
 export interface DefaultWebsiteDocumentMaterializerOptions {
+  readonly githubToken?: string;
   readonly resolver?:
     RemoteResourceResolver;
 
@@ -146,6 +148,7 @@ function isHtmlResource(
 
 export class DefaultWebsiteDocumentMaterializer
   implements WebsiteDocumentMaterializer {
+  private readonly githubMaterializer: GitHubRepositoryMaterializer;
   private readonly resolver:
     RemoteResourceResolver;
 
@@ -226,6 +229,10 @@ export class DefaultWebsiteDocumentMaterializer
     this.observability =
       options.observability
       ?? defaultObservabilityHub;
+    this.githubMaterializer = new GitHubRepositoryMaterializer({
+      token: options.githubToken, fetcher: this.fetcher, timeoutMs: this.timeoutMs,
+      documentService: this.documentService, maxBytes: this.maxBytes,
+    });
   }
 
   async materialize(
@@ -238,6 +245,10 @@ export class DefaultWebsiteDocumentMaterializer
     signal?:
       AbortSignal,
   ): Promise<WebDocument> {
+    if (source.options?.profile === "github-repository") return this.observability.stage(
+      "document.materialize", { attributes: observabilityAttributes({ url: discoveredUrl.url, discoveredBy: "github", path: discoveredUrl.github?.path }) },
+      () => this.githubMaterializer.materialize(source, discoveredUrl, signal),
+    );
     return this.observability.stage(
       "document.materialize",
       {

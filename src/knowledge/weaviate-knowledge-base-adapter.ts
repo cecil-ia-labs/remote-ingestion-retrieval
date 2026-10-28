@@ -1,25 +1,44 @@
 import { createHash } from "node:crypto";
+import { setTimeout as delay } from "node:timers/promises";
 import type { JsonValue } from "../domain/source.types.js";
 import type { MarkdownSplitter } from "../chunking/markdown-splitter.js";
 import { StructuralMarkdownSplitter } from "../chunking/structural-markdown-splitter.js";
 import {
-  WeaviateRestClient, ensureWeaviateCollection, validateCollectionName, weaviateObjectId, weaviateLabels,
+  WeaviateRestClient, WeaviateHttpError, isWeaviateRecord, ensureWeaviateCollection, validateCollectionName, weaviateObjectId, weaviateLabels,
   type WeaviateConnectionOptions, type WeaviateEmbeddingConfiguration,
 } from "../vector/weaviate-client.js";
 import type {
   KnowledgeBaseVectorStoreAdapter, KnowledgeBaseVectorStoreIngestRequest, KnowledgeBaseVectorStoreIngestResult,
 } from "./knowledge-base-vector-store.js";
+import { loadKnowledgeBaseFiles, type LocalKnowledgeBaseFile, type KnowledgeBaseFileLoadOptions } from "./knowledge-base-file-loader.js";
 
 export interface WeaviateKnowledgeBaseAdapterOptions extends WeaviateConnectionOptions, WeaviateEmbeddingConfiguration {
   readonly collection: string;
   readonly splitter?: MarkdownSplitter;
   readonly maxChunkCharacters?: number;
   readonly batchSize?: number;
+  readonly maxChunks?: number;
+  readonly verificationAttempts?: number;
+  readonly verificationDelayMs?: number;
+}
+
+export interface WeaviateLocalFileIngestRequest extends Omit<KnowledgeBaseVectorStoreIngestRequest, "files" | "chunking">, KnowledgeBaseFileLoadOptions {
+  readonly files: readonly LocalKnowledgeBaseFile[];
 }
 
 export interface WeaviateKnowledgeBaseIngestResult extends KnowledgeBaseVectorStoreIngestResult {
+  readonly files: readonly {
+    readonly filename: string;
+    /** ID of the first persisted chunk, not a synthetic Files API identifier. */
+    readonly id: string;
+    readonly chunkIds: readonly string[];
+    readonly contentHash: string;
+    readonly byteLength: number;
+    readonly status: "completed";
+  }[];
   /** Weaviate stores chunks as objects rather than uploaded files. */
   readonly objects: readonly { readonly filename: string; readonly id: string; readonly chunkId: string }[];
+  readonly verification: { readonly objects: number; readonly vectors: number; readonly dimensions: number };
 }
 
 function stringValue(value: JsonValue | undefined): string {
@@ -32,6 +51,9 @@ export class WeaviateKnowledgeBaseAdapter implements KnowledgeBaseVectorStoreAda
   private readonly client: WeaviateRestClient;
   private readonly splitter: MarkdownSplitter;
   private readonly batchSize: number;
+  private readonly maxChunks: number;
+  private readonly verificationAttempts: number;
+  private readonly verificationDelayMs: number;
 
   constructor(private readonly options: WeaviateKnowledgeBaseAdapterOptions) {
     validateCollectionName(options.collection);
@@ -41,9 +63,22 @@ export class WeaviateKnowledgeBaseAdapter implements KnowledgeBaseVectorStoreAda
     this.client = new WeaviateRestClient(options);
     this.splitter = options.splitter ?? new StructuralMarkdownSplitter({ maxCharacters: options.maxChunkCharacters ?? 6400 });
     this.batchSize = options.batchSize ?? 100;
+    this.maxChunks = options.maxChunks ?? 10_000;
+    if (!Number.isSafeInteger(this.maxChunks) || this.maxChunks < 1) throw new TypeError("Weaviate maxChunks must be a positive safe integer.");
     if (!Number.isSafeInteger(this.batchSize) || this.batchSize < 1 || this.batchSize > 200) {
       throw new TypeError("Weaviate batchSize must be an integer from 1 to 200.");
     }
+    this.verificationAttempts = options.verificationAttempts ?? 3;
+    this.verificationDelayMs = options.verificationDelayMs ?? 250;
+    if (!Number.isSafeInteger(this.verificationAttempts) || this.verificationAttempts < 1 || this.verificationAttempts > 10
+      || !Number.isSafeInteger(this.verificationDelayMs) || this.verificationDelayMs < 0 || this.verificationDelayMs > 10_000) {
+      throw new TypeError("Verification requires 1-10 attempts and a delay from 0 to 10000ms.");
+    }
+  }
+
+  async ingestFiles(request: WeaviateLocalFileIngestRequest): Promise<WeaviateKnowledgeBaseIngestResult> {
+    const files = await loadKnowledgeBaseFiles(request.files, request);
+    return this.ingest({ ...request, files });
   }
 
   async ingest(request: KnowledgeBaseVectorStoreIngestRequest): Promise<WeaviateKnowledgeBaseIngestResult> {
@@ -52,6 +87,7 @@ export class WeaviateKnowledgeBaseAdapter implements KnowledgeBaseVectorStoreAda
       throw new TypeError("Weaviate uses local Markdown chunking; token chunking/overlap options are unsupported. Configure splitter or maxChunkCharacters instead.");
     }
     if (!request.namespace.trim()) throw new TypeError("Weaviate namespace must not be empty.");
+    if (!request.files.length) throw new TypeError("Weaviate ingestion requires at least one knowledge file.");
     const objects: Record<string, unknown>[] = [];
     const persisted: { filename: string; id: string; chunkId: string }[] = [];
     const filenames = new Set<string>();
@@ -71,6 +107,7 @@ export class WeaviateKnowledgeBaseAdapter implements KnowledgeBaseVectorStoreAda
       });
       if (!chunks.length) throw new Error(`Markdown splitter produced no chunks for ${file.filename}.`);
       for (const [ordinal, chunk] of chunks.entries()) {
+        if (objects.length >= this.maxChunks) throw new RangeError("Weaviate knowledge upload exceeds maxChunks before embedding requests.");
         if (!chunk.markdown.trim()) throw new Error(`Markdown splitter produced an empty chunk for ${file.filename}.`);
         const attributes = { ...metadata, ...chunk.metadata?.attributes };
         const chunkId = JSON.stringify([file.filename, documentHash, this.splitter.name, ordinal]);
@@ -100,11 +137,53 @@ export class WeaviateKnowledgeBaseAdapter implements KnowledgeBaseVectorStoreAda
     for (let offset = 0; offset < objects.length; offset += this.batchSize) {
       await this.client.writeBatch(objects.slice(offset, offset + this.batchSize), request.signal);
     }
+    let dimensions = this.options.dimensions;
+    // An accepted batch alone does not prove that embeddings were persisted.
+    for (const expected of objects) {
+      const properties = expected.properties;
+      if (!isWeaviateRecord(properties)) throw new Error("Invalid local Weaviate object properties.");
+      let verified = false;
+      for (let attempt = 0; attempt < this.verificationAttempts; attempt++) {
+        request.signal?.throwIfAborted();
+        let actual: unknown;
+        try {
+          actual = await this.client.request(`/objects/${this.options.collection}/${String(expected.id)}?include=vector`, "GET", undefined, request.signal);
+        } catch (error) {
+          if (!(error instanceof WeaviateHttpError) || error.status !== 404 || attempt === this.verificationAttempts - 1) throw error;
+        }
+        if (isWeaviateRecord(actual) && isWeaviateRecord(actual.properties)) {
+          if (actual.id !== expected.id || actual.class !== this.options.collection
+            || Object.entries(properties).some(([key, value]) => JSON.stringify(actual.properties && (actual.properties as Record<string, unknown>)[key]) !== JSON.stringify(value))) {
+            throw new Error(`Weaviate persisted object ${String(expected.id)} has different content or provenance.`);
+          }
+          const vector = actual.vector;
+          if (Array.isArray(vector) && vector.length > 0 && vector.every((value: unknown) => typeof value === "number" && Number.isFinite(value))) {
+            dimensions ??= vector.length;
+            if (vector.length !== dimensions) throw new Error("Weaviate persisted embedding dimensions do not agree.");
+            verified = true;
+            break;
+          }
+        }
+        if (attempt + 1 < this.verificationAttempts) await delay(this.verificationDelayMs, undefined, { signal: request.signal });
+      }
+      if (!verified) throw new Error(`Weaviate object ${String(expected.id)} has no verified persisted embedding.`);
+    }
     return {
       storeId: this.options.collection,
       storeName: this.options.collection,
-      files: request.files.map((file) => ({ filename: file.filename })),
+      files: request.files.map((file) => {
+        const chunkIds = persisted.filter((object) => object.filename === file.filename).map((object) => object.id);
+        return {
+          filename: file.filename,
+          id: chunkIds[0]!,
+          chunkIds,
+          contentHash: createHash("sha256").update(file.markdown).digest("hex"),
+          byteLength: Buffer.byteLength(file.markdown, "utf8"),
+          status: "completed" as const,
+        };
+      }),
       objects: persisted,
+      verification: { objects: persisted.length, vectors: persisted.length, dimensions: dimensions! },
     };
   }
 }
@@ -130,6 +209,9 @@ export function createVectorStoreAdapter(): WeaviateKnowledgeBaseAdapter {
     baseURL: process.env.WEAVIATE_EMBEDDING_BASE_URL?.trim() || undefined,
     timeoutMs: integer("WEAVIATE_TIMEOUT_MS"),
     batchSize: integer("WEAVIATE_BATCH_SIZE"),
+    maxChunks: integer("WEAVIATE_MAX_CHUNKS"),
     maxChunkCharacters: integer("WEAVIATE_MAX_CHUNK_CHARACTERS"),
+    verificationAttempts: integer("WEAVIATE_VERIFICATION_ATTEMPTS"),
+    verificationDelayMs: integer("WEAVIATE_VERIFICATION_DELAY_MS"),
   });
 }

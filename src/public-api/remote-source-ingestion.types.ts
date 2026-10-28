@@ -52,6 +52,8 @@ import type {
 } from "../website/index.js";
 
 export interface RemoteSourceIngestionOptions {
+  /** Read-only repository token, held by acquisition services and never source metadata. */
+  readonly githubToken?: string;
   /**
    * Explicit revision for every downstream-affecting part of the pipeline.
    * Change this when splitter, embedding model, dimensions or vector payload

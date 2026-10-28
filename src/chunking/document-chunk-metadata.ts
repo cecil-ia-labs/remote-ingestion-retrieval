@@ -93,7 +93,8 @@ export interface DocumentChunkDiscoveryMetadata {
     "root"
     | "robots"
     | "sitemap"
-    | "crawl";
+    | "crawl"
+    | "github";
 
   readonly url:
     string;

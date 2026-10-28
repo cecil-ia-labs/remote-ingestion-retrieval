@@ -1,6 +1,6 @@
 # Estratégias de descoberta e deduplicação
 
-Este documento propõe as próximas mudanças. O perfil de repositório GitHub e a deduplicação entre URLs descritos aqui **ainda não estão implementados**. Os exemplos de configuração abaixo usam filtros já existentes na biblioteca.
+O perfil `github-repository` está implementado na fachada e no runner; consulte o [README](../README.md#aquisição-de-repositórios-github) para configuração. Ele enumera árvores em um commit fixado, prioriza documentação, baixa blobs brutos com verificação de integridade e conserva limites e snapshots parciais. A deduplicação entre URLs descrita neste documento continua sendo uma proposta. Os exemplos de contenção abaixo também permanecem disponíveis no crawler convencional.
 
 ## Evidências dos casos locais
 
@@ -42,7 +42,7 @@ options: {
 
 Os filtros já são aplicados tanto a candidatos do sitemap quanto a links. Porém a inclusão pode permitir a travessia de ancestrais; a URL raiz é emitida separadamente pela descoberta. Este exemplo contém a expansão, mas não garante leitura integral dos arquivos nem a remoção da interface HTML. Aumentar `maxPages` sozinho apenas amplia o desperdício observado.
 
-### Solução proposta: perfil explícito `github-repository`
+### Perfil implementado: `github-repository`
 
 1. Reconhecer apenas uma URL válida de repositório, arquivo ou árvore do GitHub; guardar `owner`, `repo`, referência e prefixo opcional. Não alterar automaticamente a semântica de toda fonte `website`. Uma referência com barras deve ser resolvida contra branches/tags existentes, em vez de dividir cegamente a URL.
 2. Resolver a referência para um commit SHA no início da execução. Enumerar a árvore desse commit, preservando o mesmo snapshot para todos os downloads. A [API oficial de árvores Git](https://docs.github.com/en/rest/git/trees) fornece caminhos, tipos, tamanhos e hashes dos blobs. Quando `truncated` for verdadeiro, percorrer subárvores sem recursão ou declarar resultado parcial; não tratar a lista truncada como completa.
@@ -52,7 +52,7 @@ Os filtros já são aplicados tanto a candidatos do sitemap quanto a links. Por�
 6. Aplicar os limites existentes de tempo, bytes, documentos e chunks aos downloads; acrescentar orçamento de chamadas da API e bytes da enumeração. Respeitar rate limits e cancelamento. A política de DNS, protocolos e redirects deve continuar valendo também para `api.github.com` e `raw.githubusercontent.com`; credenciais não atravessam redirects para outra origem.
 7. Registrar arquivos elegíveis, adquiridos, ignorados, falhos e pendentes, com motivos. A lista completa de elegíveis dentro do escopo configurado é a referência de cobertura. Orçamento esgotado, autenticação negada ou enumeração incompleta gera snapshot parcial e impede exclusão de documentos não vistos.
 
-A integração deve ocorrer por um serviço de aquisição/descoberta específico, produzindo o mesmo Markdown com metadados consumido pelo pipeline atual. O contrato público de fonte e o relatório precisam ser estendidos explicitamente quando esse perfil for implementado.
+A integração usa serviços específicos em `src/github/`, produzindo o mesmo Markdown com metadados consumido pelo pipeline atual. O perfil fica em `WebsiteSource.options.profile`, a configuração em `options.github`, a proveniência em `DiscoveredUrl.github` e nos atributos do documento, e o resumo em `WebsiteDiscoveryStats.github`. No runner, a seleção automática reconhece URLs de repositório/tree/blob; na biblioteca, a seleção é explícita.
 
 Critérios de aceite futuros: nenhuma URL institucional/social adquirida na execução do Qdrant; README e documentos elegíveis do commit fixado aparecem antes de código de baixa prioridade; cancelamento e árvore truncada preservam o estado anterior; trocar a branch durante a execução não mistura versões.
 

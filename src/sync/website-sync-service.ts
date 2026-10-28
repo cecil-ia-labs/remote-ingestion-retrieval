@@ -581,7 +581,10 @@ export class WebsiteSyncService {
     }
 
     const snapshotComplete =
-      failures.length === 0;
+      failures.length === 0
+      && (request.source.options?.profile === "github-repository"
+        ? discovered.every((item) => item.github?.snapshotComplete === true)
+        : discovered.length < (request.source.options?.crawl?.maxPages ?? 10_000));
 
     const previous =
       await this.observability.stage(

@@ -20,3 +20,4 @@ export * from "./limits/index.js";
 export * from "./public-api/index.js";
 export * from "./pipeline/index.js";
 export * from "./knowledge/index.js";
+export * from "./github/index.js";

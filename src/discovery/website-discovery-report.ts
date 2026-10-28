@@ -3,6 +3,7 @@ import type {
 } from "./discovered-url.js";
 
 export interface WebsiteDiscoveryStats {
+  github?: import("../github/github-repository.types.js").GitHubDiscoverySummary;
   sitemapDocumentsProcessed:
     number;
 
