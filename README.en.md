@@ -453,3 +453,16 @@ AUTO_UPLOAD_MAX_ELAPSED_MS=3600000 AUTO_UPLOAD_CONCURRENCY=4 npm run upload:vect
 `AUTO_UPLOAD_MAX_ELAPSED_MS` sets the standalone upload/resume deadline. Precedence is: the upload-specific value, then `AUTO_MAX_ELAPSED_MS` when defined, then 3600000 ms when both are absent. The default global deadline for `npm run ingest` remains 600000 ms. Setting only `AUTO_MAX_ELAPSED_MS=600000` also limits standalone upload to ten minutes; the command above explicitly allows one hour.
 
 Resume is an implemented capability; this documentation does not claim that a new remote run has been validated.
+
+
+### Repair invalid OpenAI associations during resume
+
+OpenAI readback retries follow `AUTO_VECTOR_STORE_VERIFICATION_ATTEMPTS` (default 3) and `AUTO_VECTOR_STORE_VERIFICATION_DELAY_MS` (default 250 ms), while metadata and static chunking checks remain strict. A `0/0` response is still an error. Resume checks existing associations; without the option below, it reports invalid entries and stops without modifying them.
+
+```bash
+AUTO_UPLOAD_MAX_ELAPSED_MS=3600000 AUTO_UPLOAD_CONCURRENCY=8 npm run upload:vector-store -- --resume-upload-report ./data/vector-store-uploads/openai-compatible/187756d1-f130-476e-9987-ddbf0b026359.json --repair-invalid-associations
+```
+
+`--repair-invalid-associations` is allowed only with `--resume-upload-report`. It explicitly permits detaching and recreating only invalid associations in the same Vector Store, using the same File ID, attributes, and requested strategy. It does not delete the Files API resource, create a new store, or upload files again. Valid associations remain untouched. The affected file may temporarily leave search results while its association is reprocessed.
+
+The command repairs one association first and fully verifies that canary. Only after it passes does bounded concurrent repair of the remaining entries begin; a failed canary stops before the others are changed. Processing failures and unexpected errors are not blindly repaired. This option does not weaken validation or accept native `0/0` chunking as success.

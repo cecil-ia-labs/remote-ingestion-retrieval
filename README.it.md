@@ -482,3 +482,16 @@ AUTO_UPLOAD_MAX_ELAPSED_MS=3600000 AUTO_UPLOAD_CONCURRENCY=4 npm run upload:vect
 `AUTO_UPLOAD_MAX_ELAPSED_MS` controlla il timeout dell'upload autonomo e della ripresa. La precedenza è: valore specifico dell'upload, poi `AUTO_MAX_ELAPSED_MS` se impostato, infine 3600000 ms quando entrambi sono assenti. Il limite globale predefinito di `npm run ingest` resta 600000 ms. Impostare soltanto `AUTO_MAX_ELAPSED_MS=600000` limita anche l'upload autonomo a dieci minuti; il comando sopra consente esplicitamente un'ora.
 
 La ripresa è una funzionalità implementata; questa documentazione non afferma che sia stata convalidata una nuova esecuzione remota.
+
+
+### Riparare associazioni OpenAI non valide durante la ripresa
+
+La verifica OpenAI ripete la lettura secondo `AUTO_VECTOR_STORE_VERIFICATION_ATTEMPTS` (predefinito 3) e `AUTO_VECTOR_STORE_VERIFICATION_DELAY_MS` (predefinito 250 ms), mantenendo rigorosi i controlli di metadati e chunking statico. Una risposta `0/0` rimane un errore. La ripresa controlla le associazioni esistenti; senza l'opzione seguente segnala quelle non valide e si interrompe senza modificarle.
+
+```bash
+AUTO_UPLOAD_MAX_ELAPSED_MS=3600000 AUTO_UPLOAD_CONCURRENCY=8 npm run upload:vector-store -- --resume-upload-report ./data/vector-store-uploads/openai-compatible/187756d1-f130-476e-9987-ddbf0b026359.json --repair-invalid-associations
+```
+
+`--repair-invalid-associations` è consentito soltanto con `--resume-upload-report` e autorizza a rimuovere e ricreare esclusivamente le associazioni non valide nello stesso Vector Store, con lo stesso File ID, gli stessi attributi e la strategia richiesta. Non elimina la risorsa della Files API, non crea un nuovo store e non ripete l'upload. Le associazioni valide restano intatte. Il file interessato può essere temporaneamente assente dai risultati di ricerca durante la rielaborazione dell'associazione.
+
+Il comando ripara prima una sola associazione e ne verifica interamente il risultato. Soltanto dopo il successo di questa prima riparazione procede sulle altre con concorrenza limitata; se fallisce, le restanti non vengono modificate. Errori di elaborazione e problemi imprevisti non vengono riparati indiscriminatamente. L'opzione non riduce i controlli e non accetta il chunking nativo `0/0` come successo.

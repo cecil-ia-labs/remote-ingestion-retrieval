@@ -123,13 +123,14 @@ async function resumeUploadInputs(path: string): Promise<SavedUploadInputs> {
 export async function runVectorStoreUpload(providerOverride?: VectorStoreProvider): Promise<void> {
   const { values, positionals } = parseArgs({
     allowPositionals: true,
-    options: { namespace: { type: "string" }, name: { type: "string" }, domain: { type: "string" }, manifest: { type: "string" }, "ingestion-report": { type: "string" }, "resume-upload-report": { type: "string" }, report: { type: "string" }, help: { type: "boolean", short: "h" } },
+    options: { namespace: { type: "string" }, name: { type: "string" }, domain: { type: "string" }, manifest: { type: "string" }, "ingestion-report": { type: "string" }, "resume-upload-report": { type: "string" }, "repair-invalid-associations": { type: "boolean" }, report: { type: "string" }, help: { type: "boolean", short: "h" } },
   });
   if (values.help) {
-    console.info("Upload local UTF-8 Markdown/text to the selected vector provider.\nUsage: npm run upload:vector-store -- --namespace support [--domain billing] file.md [...]\n   or: npm run upload:vector-store -- --namespace support --manifest kb/source/split/run/manifest.json\nConfigure AUTO_VECTOR_STORE_PROVIDER/BASE_URL/COLLECTION/API_KEY and AUTO_EMBEDDING_*. Does not crawl websites.\nResume saved documents/metadata with --ingestion-report path/to/ingestion.json (no recrawl).\nResume an existing remote store/files with --resume-upload-report path/to/upload.json (no reupload).\nAUTO_UPLOAD_MAX_ELAPSED_MS overrides AUTO_MAX_ELAPSED_MS; standalone default is 3600000ms when both are absent.\nAUTO_MAX_KB_FILES limits input documents; AUTO_MAX_SPLIT_FILES defaults to 10000 generated files.\nOptional: --name, --report. Existing namespace/source defaults and AUTO_MAX_KB_* limits apply.\nThe legacy upload:weaviate command explicitly selects Weaviate.");
+    console.info("Upload local UTF-8 Markdown/text to the selected vector provider.\nUsage: npm run upload:vector-store -- --namespace support [--domain billing] file.md [...]\n   or: npm run upload:vector-store -- --namespace support --manifest kb/source/split/run/manifest.json\nConfigure AUTO_VECTOR_STORE_PROVIDER/BASE_URL/COLLECTION/API_KEY and AUTO_EMBEDDING_*. Does not crawl websites.\nResume saved documents/metadata with --ingestion-report path/to/ingestion.json (no recrawl).\nResume an existing remote store/files with --resume-upload-report path/to/upload.json (no reupload).\nAUTO_UPLOAD_MAX_ELAPSED_MS overrides AUTO_MAX_ELAPSED_MS; standalone default is 3600000ms when both are absent.\nAUTO_MAX_KB_FILES limits input documents; AUTO_MAX_SPLIT_FILES defaults to 10000 generated files.\nOptional: --name, --report. With --resume-upload-report, --repair-invalid-associations explicitly reindexes only invalid links, keeping uploaded File IDs. Existing namespace/source defaults and AUTO_MAX_KB_* limits apply.\nThe legacy upload:weaviate command explicitly selects Weaviate.");
     return;
   }
   if (Number(Boolean(values.manifest)) + Number(Boolean(values["ingestion-report"])) + Number(Boolean(values["resume-upload-report"])) + Number(positionals.length > 0) !== 1) throw new TypeError("Supply paths, --manifest, --ingestion-report or --resume-upload-report, exclusively.");
+  if (values["repair-invalid-associations"] && !values["resume-upload-report"]) throw new TypeError("--repair-invalid-associations requires --resume-upload-report.");
   const saved: SavedUploadInputs = values["resume-upload-report"] ? await resumeUploadInputs(resolve(values["resume-upload-report"]))
     : values["ingestion-report"] ? await manifestInputs(resolve(values["ingestion-report"]), true)
     : values.manifest ? await manifestInputs(resolve(values.manifest))
@@ -179,7 +180,7 @@ export async function runVectorStoreUpload(providerOverride?: VectorStoreProvide
       name: values.name?.trim() || process.env.AUTO_VECTOR_STORE_NAME?.trim() || saved.name || configuration.collection || namespace,
       namespace, files, signal,
       uploadConcurrency: integer("AUTO_UPLOAD_CONCURRENCY", 4, 1, 32),
-      chunking: requestedChunking, resume: saved.resume,
+      chunking: requestedChunking, resume: saved.resume ? { ...saved.resume, repairInvalidAssociations: Boolean(values["repair-invalid-associations"]) } : undefined,
       onProgress: progress.record,
     });
     await mkdir(dirname(reportPath), { recursive: true });

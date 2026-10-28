@@ -32,6 +32,8 @@ export interface KnowledgeBaseVectorStoreIngestRequest {
 }
 
 export interface KnowledgeBaseVectorStoreResume {
+  /** Explicit repair of invalid associations; uploaded Files API resources are retained. */
+  readonly repairInvalidAssociations?: boolean;
   readonly storeId: string;
   readonly storeName?: string;
   readonly files: readonly { readonly filename: string; readonly id: string }[];

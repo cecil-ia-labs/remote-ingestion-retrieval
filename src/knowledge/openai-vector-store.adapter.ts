@@ -3,6 +3,7 @@ import type { VectorStoreProviderConfiguration } from "./vector-store-provider-c
 
 import {
   createKnowledgeVectorStoreFromFiles,
+  type CreateKnowledgeVectorStoreFromFilesOptions,
 } from "./openai-vector-store-ingestion.js";
 
 import type {
@@ -84,6 +85,7 @@ function toOpenAIStoreMetadata(
 export function createOpenAIVectorStoreAdapter(
   openai: OpenAI,
   name = "openai-vector-stores",
+  verification: Pick<CreateKnowledgeVectorStoreFromFilesOptions, "verificationAttempts" | "verificationDelayMs"> = {},
 ): KnowledgeBaseVectorStoreAdapter {
   return {
     name,
@@ -121,6 +123,8 @@ export function createOpenAIVectorStoreAdapter(
           signal: request.signal,
           onProgress: request.onProgress,
           resume: request.resume,
+          verificationAttempts: verification.verificationAttempts,
+          verificationDelayMs: verification.verificationDelayMs,
         },
       );
 
@@ -142,6 +146,7 @@ export function createOpenAIVectorStoreAdapter(
  * SDK reads OPENAI_API_KEY from the process environment when requests execute.
  */
 export function createVectorStoreAdapter(configuration?: VectorStoreProviderConfiguration): KnowledgeBaseVectorStoreAdapter {
+  const verification = { verificationAttempts: configuration?.verificationAttempts, verificationDelayMs: configuration?.verificationDelayMs };
   const genericBaseURL = configuration?.baseUrl ?? process.env.AUTO_VECTOR_STORE_BASE_URL?.trim();
   const compatibleBaseURL = genericBaseURL || process.env.AAC_AUTO_VECTOR_STORE_BASE_URL?.trim();
 
@@ -177,6 +182,7 @@ export function createVectorStoreAdapter(configuration?: VectorStoreProviderConf
       }),
       process.env.AAC_AUTO_VECTOR_STORE_PROVIDER_NAME?.trim()
         || "openai-compatible-vector-stores",
+      verification,
     );
   }
 
@@ -191,5 +197,7 @@ export function createVectorStoreAdapter(configuration?: VectorStoreProviderConf
       apiKey,
       baseURL: "https://api.openai.com/v1",
     }),
+    "openai-vector-stores",
+    verification,
   );
 }

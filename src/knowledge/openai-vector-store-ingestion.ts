@@ -1,4 +1,5 @@
 import OpenAI, { toFile } from "openai";
+import { setTimeout as delay } from "node:timers/promises";
 import type { KnowledgeBaseVectorStoreIngestRequest } from "./knowledge-base-vector-store.js";
 
 import type {
@@ -236,6 +237,8 @@ export interface KnowledgeVectorStoreMarkdownFile {
 }
 
 export interface CreateKnowledgeVectorStoreFromFilesOptions {
+  verificationAttempts?: number;
+  verificationDelayMs?: number;
   resume?: KnowledgeBaseVectorStoreIngestRequest["resume"];
   onProgress?: KnowledgeBaseVectorStoreIngestRequest["onProgress"];
   name: string;
@@ -266,6 +269,8 @@ const DEFAULT_CHUNKING = {
   maxChunkSizeTokens: 1600,
   chunkOverlapTokens: 100,
 };
+
+class OpenAIFileVerificationMismatch extends Error {}
 
 export async function createKnowledgeVectorStore(
   openai: OpenAI,
@@ -340,6 +345,10 @@ export async function createKnowledgeVectorStoreFromFiles(
     || !Number.isInteger(chunking.chunkOverlapTokens) || chunking.chunkOverlapTokens < 0 || chunking.chunkOverlapTokens > chunking.maxChunkSizeTokens / 2) throw new Error("Invalid OpenAI Vector Store static chunking configuration.");
   const concurrency = options.uploadConcurrency ?? 4;
   if (!Number.isSafeInteger(concurrency) || concurrency < 1 || concurrency > 32) throw new Error("uploadConcurrency must be an integer from 1 to 32.");
+  const verificationAttempts = options.verificationAttempts ?? 3;
+  const verificationDelayMs = options.verificationDelayMs ?? 250;
+  if (!Number.isSafeInteger(verificationAttempts) || verificationAttempts < 1 || verificationAttempts > 10
+    || !Number.isSafeInteger(verificationDelayMs) || verificationDelayMs < 0 || verificationDelayMs > 10_000) throw new TypeError("Verification requires 1-10 attempts and a delay from 0 to 10000ms.");
 
   // Wait for every active worker before reporting a failure, retaining its checkpoints.
   async function limited<T, R>(items: readonly T[], operation: (item: T) => Promise<R>): Promise<R[]> {
@@ -387,38 +396,74 @@ export async function createKnowledgeVectorStoreFromFiles(
   const strategy = { type: "static" as const, static: { max_chunk_size_tokens: chunking.maxChunkSizeTokens, chunk_overlap_tokens: chunking.chunkOverlapTokens } };
   function validate(entry: Uploaded, stored: Stored): void {
     if (stored.status !== "completed") throw new Error(`Vector Store file not completed: status=${stored.status}, store=${vectorStore.id}, file=${entry.fileId}.`);
-    for (const [key, value] of Object.entries(entry.attributes)) if (stored.attributes?.[key] !== value) throw new Error(`Unexpected Vector Store attribute for ${entry.filename}: key=${key}, store=${vectorStore.id}, file=${entry.fileId}.`);
+    for (const [key, value] of Object.entries(entry.attributes)) if (stored.attributes?.[key] !== value) throw new OpenAIFileVerificationMismatch(`Unexpected Vector Store attribute for ${entry.filename}: key=${key}, store=${vectorStore.id}, file=${entry.fileId}.`);
     const actual = stored.chunking_strategy;
-    if (actual?.type !== "static" || !("static" in actual) || actual.static.max_chunk_size_tokens !== chunking.maxChunkSizeTokens || actual.static.chunk_overlap_tokens !== chunking.chunkOverlapTokens) throw new Error(`Unexpected Vector Store chunking for ${entry.filename}: expected=${chunking.maxChunkSizeTokens}/${chunking.chunkOverlapTokens}, received=${JSON.stringify(actual)}, store=${vectorStore.id}, file=${entry.fileId}.`);
+    if (actual?.type !== "static" || !("static" in actual) || actual.static.max_chunk_size_tokens !== chunking.maxChunkSizeTokens || actual.static.chunk_overlap_tokens !== chunking.chunkOverlapTokens) throw new OpenAIFileVerificationMismatch(`Unexpected Vector Store chunking for ${entry.filename}: expected=${chunking.maxChunkSizeTokens}/${chunking.chunkOverlapTokens}, received=${JSON.stringify(actual)}, store=${vectorStore.id}, file=${entry.fileId}.`);
+  }
+  async function readAndVerify(entry: Uploaded): Promise<void> {
+    for (let attempt = 0; attempt < verificationAttempts; attempt++) {
+      options.signal?.throwIfAborted();
+      try {
+        let stored = await openai.vectorStores.files.retrieve(entry.fileId, { vector_store_id: vectorStore.id }, { signal: options.signal });
+        if (stored.status === "in_progress") stored = await openai.vectorStores.files.poll(vectorStore.id, entry.fileId, { signal: options.signal });
+        validate(entry, stored);
+        await options.onProgress?.({ stage: "file-verified", storeId: vectorStore.id, file: { filename: entry.filename, id: entry.fileId } });
+        return;
+      } catch (error) {
+        if (!(error instanceof OpenAIFileVerificationMismatch) || attempt + 1 === verificationAttempts) throw error;
+        await delay(Math.min(10_000, verificationDelayMs * (attempt + 1)), undefined, { signal: options.signal });
+      }
+    }
+  }
+  async function attach(entry: Uploaded): Promise<void> {
+    const attached = await openai.vectorStores.files.createAndPoll(vectorStore.id, { file_id: entry.fileId, attributes: entry.attributes, chunking_strategy: strategy }, { signal: options.signal });
+    if (attached.status !== "completed") throw new Error(`Vector Store ingestion failed: status=${attached.status}, store=${vectorStore.id}, file=${entry.fileId}.`);
+    await options.onProgress?.({ stage: "file-attached", storeId: vectorStore.id, file: { filename: entry.filename, id: entry.fileId } });
   }
   const pending: Uploaded[] = [];
+  const invalid: Uploaded[] = [];
+  let firstMismatch: OpenAIFileVerificationMismatch | undefined;
   if (resume) {
     // The last request may have completed remotely after the local deadline.
     // Read actual state and validate existing associations before scheduling writes.
     await limited(uploaded, async (entry) => {
-      let stored: Stored;
-      try { stored = await openai.vectorStores.files.retrieve(entry.fileId, { vector_store_id: vectorStore.id }, { signal: options.signal }); }
+      try { await readAndVerify(entry); }
       catch (error) {
         if (error instanceof OpenAI.APIError && error.status === 404) { pending.push(entry); return; }
+        if (error instanceof OpenAIFileVerificationMismatch) { invalid.push(entry); firstMismatch ??= error; return; }
         throw error;
       }
-      if (stored.status === "in_progress") stored = await openai.vectorStores.files.poll(vectorStore.id, entry.fileId, { signal: options.signal });
-      validate(entry, stored);
-      await options.onProgress?.({ stage: "file-verified", storeId: vectorStore.id, file: { filename: entry.filename, id: entry.fileId } });
     });
+    if (invalid.length && !resume.repairInvalidAssociations) throw new Error(`${invalid.length} invalid association(s) remain after verification retries. Resume this upload report with --repair-invalid-associations to reindex only those associations using the existing File IDs. First mismatch: ${firstMismatch?.message}`);
   } else pending.push(...uploaded);
+
+  async function repair(entry: Uploaded): Promise<void> {
+    // Re-read immediately before mutation; another run may already have repaired it.
+    try { await readAndVerify(entry); return; }
+    catch (error) {
+      if (!(error instanceof OpenAIFileVerificationMismatch) && !(error instanceof OpenAI.APIError && error.status === 404)) throw error;
+    }
+    await options.onProgress?.({ stage: "file-uploaded", storeId: vectorStore.id, file: { filename: entry.filename, id: entry.fileId } });
+    try { await openai.vectorStores.files.delete(entry.fileId, { vector_store_id: vectorStore.id }, { signal: options.signal }); }
+    catch (error) { if (!(error instanceof OpenAI.APIError) || error.status !== 404) throw error; }
+    // Only the Vector Store association is replaced; Files API content/ID stays intact.
+    await attach(entry);
+    await readAndVerify(entry);
+  }
+  if (invalid.length) {
+    // Prove the repair works on one invalid association before touching the rest.
+    try { await repair(invalid[0]!); }
+    catch (error) {
+      throw new Error(`First association repair did not verify; no other invalid associations were modified. ${error instanceof Error ? error.message : String(error)}`, { cause: error });
+    }
+    await limited(invalid.slice(1), repair);
+  }
 
   // Individual endpoints retain per-file attributes/strategy; bounded concurrency
   // avoids serial polling without returning to the problematic batch payload.
-  await limited(pending, async (entry) => {
-    const attached = await openai.vectorStores.files.createAndPoll(vectorStore.id, { file_id: entry.fileId, attributes: entry.attributes, chunking_strategy: strategy }, { signal: options.signal });
-    if (attached.status !== "completed") throw new Error(`Vector Store ingestion failed: status=${attached.status}, store=${vectorStore.id}, file=${entry.fileId}.`);
-    await options.onProgress?.({ stage: "file-attached", storeId: vectorStore.id, file: { filename: entry.filename, id: entry.fileId } });
-  });
+  await limited(pending, attach);
   const verifiedFiles = await limited(uploaded, async (entry) => {
-    const stored = await openai.vectorStores.files.retrieve(entry.fileId, { vector_store_id: vectorStore.id }, { signal: options.signal });
-    validate(entry, stored);
-    await options.onProgress?.({ stage: "file-verified", storeId: vectorStore.id, file: { filename: entry.filename, id: entry.fileId } });
+    await readAndVerify(entry);
     return { filename: entry.filename, fileId: entry.fileId, chunking: { ...chunking } };
   });
   return { vectorStoreId: vectorStore.id, vectorStoreName: vectorStore.name ?? options.name, files: verifiedFiles };

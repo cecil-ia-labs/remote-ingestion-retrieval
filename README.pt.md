@@ -508,3 +508,16 @@ AUTO_UPLOAD_MAX_ELAPSED_MS=3600000 AUTO_UPLOAD_CONCURRENCY=4 npm run upload:vect
 `AUTO_UPLOAD_MAX_ELAPSED_MS` controla o prazo do upload isolado e da retomada. A precedência é: valor específico do upload, depois `AUTO_MAX_ELAPSED_MS` quando definido, depois 3600000 ms quando ambos estão ausentes. O prazo global de `npm run ingest` continua sendo 600000 ms por padrão. Um `AUTO_MAX_ELAPSED_MS=600000` sem a opção específica limita o upload isolado a dez minutos; o comando acima define uma hora explicitamente.
 
 A retomada é uma capacidade implementada; esta documentação não afirma que uma nova execução remota tenha sido validada.
+
+
+### Reparar associações OpenAI inválidas durante a retomada
+
+A verificação OpenAI repete a leitura conforme `AUTO_VECTOR_STORE_VERIFICATION_ATTEMPTS` (padrão 3) e `AUTO_VECTOR_STORE_VERIFICATION_DELAY_MS` (padrão 250 ms), mantendo a conferência estrita de metadados e chunking. Um retorno `0/0` continua sendo erro. A retomada verifica as associações existentes; sem a opção abaixo, informa quais estão inválidas e interrompe, sem alterá-las.
+
+```bash
+AUTO_UPLOAD_MAX_ELAPSED_MS=3600000 AUTO_UPLOAD_CONCURRENCY=8 npm run upload:vector-store -- --resume-upload-report ./data/vector-store-uploads/openai-compatible/187756d1-f130-476e-9987-ddbf0b026359.json --repair-invalid-associations
+```
+
+`--repair-invalid-associations` só pode ser usado com `--resume-upload-report` e autoriza remover e recriar apenas as associações inválidas ao mesmo Vector Store, com o mesmo File ID, atributos e estratégia solicitada. Não apaga o recurso da Files API, não cria outro store nem repete o upload. Associações válidas permanecem intactas. O reparo pode retirar temporariamente o arquivo afetado da busca enquanto sua associação é reprocessada.
+
+Primeiro o comando repara uma única associação e verifica integralmente o resultado. Só depois desse primeiro reparo confirmado processa as demais, com concorrência limitada; se ele falhar, as restantes não são alteradas. Falhas de processamento e erros inesperados não são tratados como autorização para um reparo indiscriminado. Esta opção não reduz a validação nem aceita chunking nativo `0/0` como sucesso.
