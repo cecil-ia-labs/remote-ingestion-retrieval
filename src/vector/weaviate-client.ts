@@ -100,8 +100,9 @@ export class WeaviateRestClient {
       const errorItems = isWeaviateRecord(errors) ? errors.error : undefined;
       // Weaviate may include an empty errors array even when an object succeeds.
       const hasErrors = errors !== undefined && errors !== null
-        && (!isWeaviateRecord(errors) || Object.keys(errors).some((key) => key !== "error")
-          || !Array.isArray(errorItems) || errorItems.length > 0);
+        && (!isWeaviateRecord(errors) || (Object.keys(errors).length > 0
+          && (Object.keys(errors).some((key) => key !== "error")
+            || !Array.isArray(errorItems) || errorItems.length > 0)));
       if (batchResult.status !== "SUCCESS" || hasErrors) {
         const messages = Array.isArray(errorItems)
           ? errorItems.flatMap((entry: unknown): string[] => {
