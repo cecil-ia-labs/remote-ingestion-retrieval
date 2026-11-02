@@ -11,6 +11,42 @@ O pacote oferece duas formas de armazenamento:
 
 Esses contratos têm responsabilidades diferentes. Uma API de upload de arquivos não precisa implementar o contrato de vetores pré-calculados.
 
+## Agente de voz com o KB Qdrant
+
+O runner local oferece conversa por voz no navegador usando OpenAI Realtime/WebRTC e a ferramenta `search_knowledge_base`. A ferramenta reutiliza `QdrantSearchAdapter` para recuperar texto e proveniência do KB existente; não cria collections, não reenfileira ingestão e não modifica os pontos.
+
+Com as dependências instaladas e o `.env` configurado para o cluster Qdrant usado na ingestão:
+
+```bash
+npm run voice-agent
+```
+
+Abra [localhost:4318](http://localhost:4318), clique em **Avvia conversazione** e permita o microfone. A interface está em italiano, mostra transcrições e fontes da última consulta e permite silenciar o microfone e encerrar a conversa. Falar durante uma resposta interrompe o áudio pelo VAD da Realtime API e cancela buscas pendentes da pergunta anterior. O navegador transmite áudio à OpenAI; as chaves da OpenAI e do Qdrant permanecem no servidor local. Nenhuma conversa ou gravação é salva em disco por este runner.
+
+O padrão aponta para o KB desta ingestão: collection **`IncresoSiteNew`**, namespace **`incresositenew`**, embeddings nativos **`sentence-transformers/all-MiniLM-L6-v2`**, **384 dimensões**. Collection e namespace são fixados pelo servidor e não podem ser escolhidos pela ferramenta nem pela requisição do navegador. Os parâmetros de embeddings devem corresponder aos usados na ingestão; `AUTO_EMBEDDING_*` prevalece sobre o modelo/dimensões de fallback. O modo `provided` reutiliza `AUTO_EMBEDDING_PROVIDER_MODULE`.
+
+A fala e as instruções da assistente estão em italiano, com pronúncia, sotaque neutro e cadência de uma italiana nativa. As consultas ao KB também usam italiano; outro idioma falado exige pedido explícito do usuário. A apresentação acontece uma única vez na abertura, mesmo quando interrompida. As próximas respostas continuam a conversa diretamente. Essas características de fala são orientadas por prompt e dependem da síntese de áudio do modelo. O [guia italiano da demo](README.it.md#demo-vocale-increso--avvio-rapido) contém as instruções para executar o pacote compartilhado. As consultas da demo acessam apenas o Qdrant, sem buscar conteúdo ao vivo no site da empresa.
+
+| Variável | Padrão / uso |
+| --- | --- |
+| `OPENAI_API_KEY` | Chave existente, com acesso ao modelo Realtime e saldo. Usa a API oficial da OpenAI. |
+| `AUTO_VECTOR_STORE_BASE_URL` / `AUTO_VECTOR_STORE_API_KEY` | Conexão do cluster Qdrant existente; também aceita os aliases `QDRANT_URL` / `QDRANT_API_KEY`. |
+| `VOICE_KB_COLLECTION` | `IncresoSiteNew`; independente da collection de upload em `AUTO_VECTOR_STORE_COLLECTION`. |
+| `VOICE_KB_NAMESPACE` | `incresositenew`; independente de `SOURCE_ID` e `AUTO_KB_NAMESPACE`. |
+| `VOICE_KB_DOMAIN` | Vazio: sem restrição adicional de domínio; namespace sempre obrigatório. |
+| `VOICE_KB_LANGUAGE` | `italiano`; orienta o idioma das consultas, preservando o idioma falado pelo usuário. |
+| `VOICE_KB_TOP_K` | `4`; de 1 a 10 trechos, com contexto total limitado a 16000 caracteres. |
+| `VOICE_REALTIME_MODEL` | `gpt-realtime-2.1`; precisa estar disponível para a chave utilizada. |
+| `VOICE_REALTIME_VOICE` | `marin`. |
+| `VOICE_PORT` | `4318`; servidor restrito a `127.0.0.1`. |
+| `VOICE_MAX_SESSION_SECONDS` | `600`; de 1 a 3600, encerramento automático pelo navegador. |
+
+O assistente recebe instruções para consultar o KB antes de respostas factuais, reconhecer falta de informação e tratar documentos como dados externos. O servidor limita cada resposta de busca e o cliente permite até duas consultas por pergunta. São instruções de fundamentação para o modelo, não uma garantia de exatidão de toda resposta. O áudio é gerenciado pelo WebRTC; não há conversão manual de PCM ou dependências adicionais de áudio.
+
+Este runner atende ao uso local no navegador. Não inclui integração SIP/telefone nem autenticação para publicação em rede. Acesso remoto requer uma integração própria. O comando compila o projeto antes de iniciar; iniciar o servidor não abre uma sessão paga até o usuário clicar em **Avvia conversazione**.
+
+Implementação conforme a documentação oficial de [WebRTC](https://developers.openai.com/api/docs/guides/voice-webrtc) e [function calling na Realtime API](https://developers.openai.com/api/docs/guides/realtime-conversations).
+
 ## Configuração comum dos providers
 
 `AUTO_VECTOR_STORE_BASE_URL` é a URL principal do armazenamento selecionado. A configuração compartilhada é resolvida por `resolveVectorStoreProviderConfiguration()` e consumida por `createKnowledgeBaseVectorStoreAdapter()` e `createPrecomputedVectorStore()`.

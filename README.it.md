@@ -11,6 +11,46 @@ Il pacchetto offre due modalità di archiviazione:
 
 Questi contratti hanno responsabilità diverse. Un'API che riceve file non deve necessariamente implementare il contratto per vettori precalcolati.
 
+## Demo vocale Increso — avvio rapido
+
+La demo offre una conversazione in italiano con una voce femminile, trascrizione e fonti consultate. La presentazione viene pronunciata una sola volta per sessione; puoi interrompere l'assistente parlando e proseguire la conversazione.
+
+La ricerca interroga **Qdrant**, nella collection **`IncresoSiteNew`** e nel namespace **`incresositenew`**. Usa i testi già acquisiti nella base di conoscenza e **non visita il sito aziendale durante la conversazione**. I collegamenti alle fonti sono mostrati per consultazione; il sito si apre soltanto se fai clic su un collegamento. L'audio viene elaborato da OpenAI Realtime, mentre il server locale esegue le ricerche nel cluster Qdrant esistente.
+
+Per eseguire il progetto ricevuto in ZIP:
+
+1. Estrai l'archivio e apri un terminale nella cartella `5websource-crawler`.
+2. Installa Node.js 22 o successivo, se non è già disponibile.
+3. Installa le dipendenze e avvia la demo:
+
+   ```bash
+   npm ci
+   npm run voice-agent
+   ```
+
+4. Apri [localhost:4318](http://localhost:4318), premi **Avvia conversazione** e consenti l'accesso al microfono.
+5. Usa **Disattiva microfono** per silenziarlo e **Termina** per chiudere la conversazione. Premi `Ctrl+C` nel terminale per arrestare il server.
+
+Puoi chiedere, per esempio: «Di cosa si occupa Increso?» oppure «Quali soluzioni offre per la customer experience?». La demo necessita di una connessione Internet, dell'accesso al cluster Qdrant già popolato e di una chiave OpenAI abilitata al modello Realtime. I file locali `kb/` non sostituiscono il servizio Qdrant e non vengono caricati automaticamente all'avvio.
+
+Il file `.env` è incluso nel pacchetto condiviso e contiene le credenziali operative: mantienilo riservato. L'archivio contiene codice sorgente, build, documentazione, lockfile e dati locali del progetto. `node_modules/` e la cronologia `.git/` sono esclusi; `npm ci` ricrea le dipendenze. Nessuna nuova ingestione è necessaria per provare la demo. L'installazione di Chrome/Puppeteer serve soltanto per acquisire nuovi siti che richiedono il browser, non per la demo vocale.
+
+| Variabile | Valore predefinito / funzione |
+| --- | --- |
+| `OPENAI_API_KEY` | Chiave OpenAI dal file `.env`; rimane sul server. |
+| `AUTO_VECTOR_STORE_BASE_URL` / `AUTO_VECTOR_STORE_API_KEY` | Endpoint e credenziali del cluster Qdrant esistente. |
+| `VOICE_KB_COLLECTION` | `IncresoSiteNew`. |
+| `VOICE_KB_NAMESPACE` | `incresositenew`. |
+| `VOICE_KB_DOMAIN` | Facoltativo: filtro esatto aggiuntivo; il namespace è sempre applicato. |
+| `VOICE_KB_LANGUAGE` | `italiano`; lingua delle query di ricerca. |
+| `VOICE_KB_TOP_K` | `4`; da 1 a 10 passaggi per ricerca. |
+| `VOICE_REALTIME_MODEL` | `gpt-realtime-2.1`. |
+| `VOICE_REALTIME_VOICE` | `marin`. |
+| `VOICE_PORT` | `4318`; server disponibile soltanto su `127.0.0.1`. |
+| `VOICE_MAX_SESSION_SECONDS` | `600`; durata massima della conversazione nel browser. |
+
+Dopo una modifica alla configurazione, riavvia il server e apri una nuova conversazione. La demo non salva registrazioni sul disco e non modifica i punti nel KB. I messaggi dell'applicazione sono in italiano; eventuali messaggi diagnostici restituiti direttamente dal provider o dal browser possono essere nella loro lingua originale.
+
 ## Configurazione comune dei provider
 
 `AUTO_VECTOR_STORE_BASE_URL` è l'URL principale dell'archiviazione selezionata. La configurazione condivisa viene risolta da `resolveVectorStoreProviderConfiguration()` e utilizzata da `createKnowledgeBaseVectorStoreAdapter()` e `createPrecomputedVectorStore()`.

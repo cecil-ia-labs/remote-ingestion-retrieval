@@ -52,6 +52,7 @@
     "build": "tsc -p tsconfig.json",
     "clean": "rm -rf dist",
     "ingest": "node --env-file=.env --import tsx src/cli/ingest.ts",
+    "voice-agent": "npm run build && node --env-file=.env dist/cli/voice-agent.js",
     "upload:weaviate": "node --env-file=.env --import tsx src/cli/upload-weaviate.ts",
     "upload:vector-store": "node --env-file=.env --import tsx src/cli/upload-vector-store.ts",
     "pipeline:show": "cat data/visual-validation/phase-27/source-insertion-outcomes.json 2>/dev/null || true",
