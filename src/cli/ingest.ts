@@ -29,6 +29,14 @@ import {
   WebsiteDiscoveryService,
 } from "../discovery/website-discovery-service.js";
 
+import {
+  DefaultCrawlPageAcquirer,
+} from "../discovery/crawl-page-acquirer.js";
+
+import {
+  LinkCrawler,
+} from "../discovery/link-crawler.js";
+
 import type {
   WebsiteDiscoveryStats,
 } from "../discovery/website-discovery-report.js";
@@ -561,10 +569,20 @@ async function main(): Promise<void> {
       : undefined;
 
     const runSignal = AbortSignal.timeout(maxElapsedMs);
+    browserManager = new PuppeteerBrowserManager();
     startStage(`Discovering URLs (page limit: ${maxPages}, timeout: ${maxElapsedMs}ms)`);
     const discovery = await new WebsiteDiscoveryService({
       maxUrls: maxPages,
       githubToken: process.env.GITHUB_TOKEN,
+      linkCrawler: new LinkCrawler({
+        acquirer: new DefaultCrawlPageAcquirer({
+          renderer: new HtmlRenderingOrchestrator({
+            browserRenderer: new PuppeteerBrowserHtmlRenderer({
+              sessionFactory: browserManager,
+            }),
+          }),
+        }),
+      }),
     }).collectReport(source, runSignal);
 
     discoveredUrls = discovery.urls;
@@ -572,7 +590,6 @@ async function main(): Promise<void> {
     logProgress(`Discovery completed: ${discoveredUrls.length} URLs; ${discoveryStats.crawlPagesFetched} crawl pages fetched, ${discoveryStats.crawlPagesFailed} failed`);
 
     startStage(`Materializing ${discoveredUrls.length} pages (concurrency: ${materializationConcurrency})`);
-    browserManager = new PuppeteerBrowserManager();
 
     const materializer = new DefaultWebsiteDocumentMaterializer({
       githubToken: process.env.GITHUB_TOKEN,
@@ -967,8 +984,19 @@ async function main(): Promise<void> {
   if (failure) {
     console.error(failure);
     process.exitCode = 1;
-  } else if (partial || !vectorStoreResult) {
-    process.exitCode = 2;
+  } else {
+    if (vectorStoreResult) {
+      logProgress(
+        `Ingestion completed successfully${partial ? " with partial coverage" : ""}: `
+        + `${documents.length} documents indexed in vector store "${vectorStoreResult.storeId}".`,
+      );
+    } else {
+      logProgress("Ingestion finished without vector-store upload; see report for details.");
+    }
+
+    if (partial || !vectorStoreResult) {
+      process.exitCode = 2;
+    }
   }
 }
 

@@ -135,6 +135,8 @@ npm run ingest
 
 O runner descobre páginas, materializa Markdown, enriquece os metadados, aplica o splitter e envia o resultado ao adapter. A seleção `weaviate` usa os módulos incluídos neste repositório; não depende do checkout de benchmarks.
 
+Ao terminar, o runner fecha o navegador usado na descoberta e na materialização, grava o relatório e exibe `Ingestion completed successfully` quando a indexação é concluída. Se a cobertura for parcial, a mensagem inclui `with partial coverage`. Os códigos de saída são `0` para conclusão completa, `2` para resultado parcial ou upload não realizado e `1` para falha.
+
 A collection é criada se não existir. Uma collection existente precisa ter o mesmo vectorizer, modelo, configuração de embeddings e propriedades esperadas. O adapter rejeita incompatibilidades em vez de alterar o schema existente. Use uma collection dedicada, com um vetor sem nome. Nomes devem começar com letra maiúscula e conter somente letras, números e `_`.
 
 O vectorizer `text2vec-weaviate` gera os embeddings na importação dos objetos e está disponível no Weaviate Cloud. Não há uma chamada separada a `/embeddings` nesta integração. Consulte a [documentação oficial dos embeddings Weaviate](https://docs.weaviate.io/weaviate/model-providers/weaviate/embeddings) para modelos, dimensões e disponibilidade.
