@@ -365,7 +365,8 @@ export class DefaultUrlCanonicalizer
     if (
       this.options
         .removeFragment
-      && url.hash
+      // URL.hash is also empty when the URL ends with a bare '#'.
+      && url.href.includes("#")
     ) {
       url.hash =
         "";

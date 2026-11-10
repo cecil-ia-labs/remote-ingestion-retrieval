@@ -68,19 +68,29 @@ async function manifestInputs(path: string, ingestionReport = false): Promise<Sa
     const root = resolve(parsed.markdownDirectory);
     const saved = new Map<string, { path: string; hash: string }>();
     for (const item of parsed.materialization.succeeded as unknown[]) {
-      if (!record(item) || typeof item.filename !== "string" || typeof item.relativePath !== "string" || typeof item.contentHash !== "string" || saved.has(item.filename)) throw new TypeError("Invalid or duplicate saved document in ingestion report.");
+      if (!record(item) || typeof item.filename !== "string" || typeof item.relativePath !== "string" || typeof item.contentHash !== "string") throw new TypeError("Invalid saved document in ingestion report.");
       const absolute = resolve(root, item.relativePath);
       const local = relative(root, absolute);
       if (isAbsolute(item.relativePath) || local === ".." || local.startsWith("../") || isAbsolute(local)) throw new TypeError("Saved document path escapes the Markdown directory.");
+      const previous = saved.get(item.filename);
+      if (previous && (previous.path !== absolute || previous.hash !== item.contentHash)) throw new TypeError("Conflicting duplicate saved document in ingestion report.");
       saved.set(item.filename, { path: absolute, hash: item.contentHash });
     }
-    const files = (parsed.knowledgeBaseManifest as unknown[]).map((entry): LocalKnowledgeBaseFile => {
+    const files = new Map<string, LocalKnowledgeBaseFile>();
+    for (const entry of parsed.knowledgeBaseManifest as unknown[]) {
       if (!record(entry) || typeof entry.filename !== "string" || !record(entry.metadata) || !json(entry.metadata)) throw new TypeError("Invalid saved knowledge metadata.");
       const document = saved.get(entry.filename);
       if (!document || entry.metadata.content_hash !== document.hash) throw new TypeError("Saved document hash/metadata mismatch.");
-      return { path: document.path, filename: entry.filename, metadata: entry.metadata };
-    });
-    return { files, alreadySplit: false, namespace: typeof parsed.namespace === "string" ? parsed.namespace : undefined, name: typeof parsed.vectorStoreName === "string" ? parsed.vectorStoreName : undefined };
+      const previous = files.get(entry.filename);
+      if (previous) {
+        if (previous.metadata?.source_id !== entry.metadata.source_id
+          || previous.metadata?.document_id !== entry.metadata.document_id
+          || previous.metadata?.canonical_url !== entry.metadata.canonical_url) throw new TypeError("Conflicting duplicate saved knowledge metadata.");
+        continue;
+      }
+      files.set(entry.filename, { path: document.path, filename: entry.filename, metadata: entry.metadata });
+    }
+    return { files: [...files.values()], alreadySplit: false, namespace: typeof parsed.namespace === "string" ? parsed.namespace : undefined, name: typeof parsed.vectorStoreName === "string" ? parsed.vectorStoreName : undefined };
   }
   if (!record(parsed) || !Array.isArray(parsed.files)) throw new TypeError("Upload manifest must contain files: [{ filename, metadata }].");
   const files = (parsed.files as unknown[]).map((file) => {

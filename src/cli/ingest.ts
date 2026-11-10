@@ -119,6 +119,20 @@ const METADATA_CACHE_PATH = resolve(
 type AdapterFactory = () => unknown | Promise<unknown>;
 type MetadataMode = "local" | "model";
 
+let currentStage = "Initializing";
+let stageStartedAt = Date.now();
+let progressTimer: ReturnType<typeof setInterval> | undefined;
+
+function logProgress(message: string): void {
+  console.info(`[${new Date().toISOString()}] [ingest] ${message}`);
+}
+
+function startStage(stage: string): void {
+  currentStage = stage;
+  stageStartedAt = Date.now();
+  logProgress(stage);
+}
+
 interface MaterializationFailure {
   readonly url: string;
   readonly error: string;
@@ -192,6 +206,7 @@ async function loadVectorStoreAdapter(): Promise<KnowledgeBaseVectorStoreAdapter
 }
 
 async function withMarkdownSplitter(adapter: KnowledgeBaseVectorStoreAdapter): Promise<KnowledgeBaseVectorStoreAdapter> {
+  startStage("Loading Markdown splitter");
   const splitter = await loadKnowledgeBaseMarkdownSplitter({
     maxCharacters: integerEnvironmentVariable("AUTO_SPLITTER_MAX_CHARS", 6400, 1),
     modulePath: process.env.AUTO_MARKDOWN_SPLITTER_MODULE?.trim(),
@@ -199,6 +214,7 @@ async function withMarkdownSplitter(adapter: KnowledgeBaseVectorStoreAdapter): P
   return {
     name: `${adapter.name}:${splitter.name}`,
     async ingest(request) {
+      startStage(`Splitting ${request.files.length} Markdown files`);
       const files = await splitKnowledgeBaseFiles(request.files, {
         splitter, namespace: request.namespace, signal: request.signal, fallbackSourceUrl: SOURCE_URL,
         maxFiles: integerEnvironmentVariable("AUTO_MAX_SPLIT_FILES", 10_000, 1),
@@ -213,6 +229,7 @@ async function withMarkdownSplitter(adapter: KnowledgeBaseVectorStoreAdapter): P
       }
       await writeFile(resolve(directory, "manifest.json"), JSON.stringify({ splitter: splitter.name, files: files.map(({ filename, metadata }) => ({ filename, metadata })) }, null, 2), "utf8");
       console.log(`Split knowledge files: ${files.length}; manifest: ${directory}/manifest.json`);
+      startStage(`Uploading and indexing ${files.length} files in the vector store`);
       const result = await adapter.ingest({ ...request, files, ...(adapter.supportsTokenChunking === false ? { chunking: undefined } : {}) });
       const expected = new Set(files.map((file) => file.filename));
       if (!isKnowledgeBaseVectorStoreIngestResult(result) || result.files.length !== expected.size
@@ -220,6 +237,7 @@ async function withMarkdownSplitter(adapter: KnowledgeBaseVectorStoreAdapter): P
         || result.files.some((file) => !expected.has(file.filename))) {
         throw new Error(`Vector store adapter "${adapter.name}" returned an incomplete split-file result.`);
       }
+      logProgress("Vector store ingestion completed");
       return {
         ...result,
         files: request.files.map((file) => ({ filename: file.filename })),
@@ -396,11 +414,18 @@ async function main(): Promise<void> {
 
   const runId = randomUUID();
   const startedAt = new Date().toISOString();
+  startStage(`Starting run ${runId}`);
+  progressTimer = setInterval(() => {
+    const elapsedSeconds = Math.floor((Date.now() - stageStartedAt) / 1_000);
+    logProgress(`Still waiting: ${currentStage} (${elapsedSeconds}s in this stage)`);
+  }, 10_000);
+  progressTimer.unref();
   const namespace = process.env.AUTO_KB_NAMESPACE?.trim()
     || SOURCE_ID;
   const vectorStoreName = process.env.AUTO_VECTOR_STORE_NAME?.trim()
     || SOURCE_TITLE;
   const reportPath = resolve(REPORT_ROOT, `${runId}.json`);
+  logProgress(`Report will be written to ${reportPath}`);
   const progress = createVectorStoreProgressRecorder(`${reportPath}.progress.json`);
   const mode = metadataMode();
 
@@ -522,8 +547,11 @@ async function main(): Promise<void> {
   let browserManager: PuppeteerBrowserManager | undefined;
 
   try {
+    startStage("Loading vector store adapter");
     const adapter = await loadVectorStoreAdapter();
     adapterName = adapter.name;
+    logProgress(`Vector store adapter ready: ${adapterName}`);
+    startStage(`Preparing metadata enricher and cache (mode: ${mode})`);
     const metadataEnricher = mode === "local"
       ? new LocalMetadataEnricher()
       : await loadMetadataEnricher();
@@ -533,6 +561,7 @@ async function main(): Promise<void> {
       : undefined;
 
     const runSignal = AbortSignal.timeout(maxElapsedMs);
+    startStage(`Discovering URLs (page limit: ${maxPages}, timeout: ${maxElapsedMs}ms)`);
     const discovery = await new WebsiteDiscoveryService({
       maxUrls: maxPages,
       githubToken: process.env.GITHUB_TOKEN,
@@ -540,7 +569,9 @@ async function main(): Promise<void> {
 
     discoveredUrls = discovery.urls;
     discoveryStats = discovery.stats;
+    logProgress(`Discovery completed: ${discoveredUrls.length} URLs; ${discoveryStats.crawlPagesFetched} crawl pages fetched, ${discoveryStats.crawlPagesFailed} failed`);
 
+    startStage(`Materializing ${discoveredUrls.length} pages (concurrency: ${materializationConcurrency})`);
     browserManager = new PuppeteerBrowserManager();
 
     const materializer = new DefaultWebsiteDocumentMaterializer({
@@ -558,13 +589,21 @@ async function main(): Promise<void> {
       }),
     });
 
+    let completedPages = 0;
     const tasks = discoveredUrls.map(
-      (discoveredUrl) => (signal?: AbortSignal) =>
-        materializer.materialize(
-          source,
-          discoveredUrl,
-          signal,
-        ),
+      (discoveredUrl, index) => async (signal?: AbortSignal) => {
+        logProgress(`Page ${index + 1}/${discoveredUrls.length}: materialization started`);
+        try {
+          const document = await materializer.materialize(source, discoveredUrl, signal);
+          completedPages += 1;
+          logProgress(`Page ${index + 1}/${discoveredUrls.length}: materialized (${completedPages}/${discoveredUrls.length} finished)`);
+          return document;
+        } catch (cause) {
+          completedPages += 1;
+          logProgress(`Page ${index + 1}/${discoveredUrls.length}: failed (${completedPages}/${discoveredUrls.length} finished)`);
+          throw cause;
+        }
+      },
     );
 
     const results = await new CrawlScheduler({
@@ -575,6 +614,8 @@ async function main(): Promise<void> {
       signal: runSignal,
     });
 
+    const materializedDocumentIds = new Set<string>();
+    let duplicateDocuments = 0;
     for (let index = 0; index < results.length; index += 1) {
       const result = results[index];
       const discoveredUrl = discoveredUrls[index];
@@ -584,6 +625,11 @@ async function main(): Promise<void> {
       }
 
       if (result.status === "fulfilled") {
+        if (materializedDocumentIds.has(result.value.id)) {
+          duplicateDocuments += 1;
+          continue;
+        }
+        materializedDocumentIds.add(result.value.id);
         documents.push(result.value);
       } else {
         materializationFailures.push({
@@ -593,10 +639,12 @@ async function main(): Promise<void> {
       }
     }
 
+    logProgress(`Materialization completed: ${documents.length} unique documents, ${duplicateDocuments} duplicate aliases ignored, ${materializationFailures.length} failed`);
     if (documents.length === 0) {
       throw new Error("No website pages were materialized; vector-store upload was skipped.");
     }
 
+    startStage(`Preparing metadata for ${documents.length} documents`);
     markdownBytes = documents.reduce(
       (total, document) => total + Buffer.byteLength(document.markdown, "utf8"),
       0,
@@ -888,6 +936,7 @@ async function main(): Promise<void> {
     failure,
   };
 
+  startStage("Writing ingestion report");
   await mkdir(dirname(reportPath), {
     recursive: true,
   });
@@ -926,4 +975,6 @@ async function main(): Promise<void> {
 main().catch((cause: unknown) => {
   console.error(errorMessage(cause));
   process.exitCode = 1;
+}).finally(() => {
+  if (progressTimer) clearInterval(progressTimer);
 });
