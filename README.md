@@ -559,3 +559,9 @@ AUTO_UPLOAD_MAX_ELAPSED_MS=3600000 AUTO_UPLOAD_CONCURRENCY=8 npm run upload:vect
 `--repair-invalid-associations` só pode ser usado com `--resume-upload-report` e autoriza remover e recriar apenas as associações inválidas ao mesmo Vector Store, com o mesmo File ID, atributos e estratégia solicitada. Não apaga o recurso da Files API, não cria outro store nem repete o upload. Associações válidas permanecem intactas. O reparo pode retirar temporariamente o arquivo afetado da busca enquanto sua associação é reprocessada.
 
 Primeiro o comando repara uma única associação e verifica integralmente o resultado. Só depois desse primeiro reparo confirmado processa as demais, com concorrência limitada; se ele falhar, as restantes não são alteradas. Falhas de processamento e erros inesperados não são tratados como autorização para um reparo indiscriminado. Esta opção não reduz a validação nem aceita chunking nativo `0/0` como sucesso.
+
+## Licença e contribuições
+
+O código e a documentação originais deste projeto são distribuídos sob a [Licença MIT](LICENSE), com uso comercial, modificação e redistribuição permitidos mediante a preservação dos avisos de copyright e licença aplicáveis. Dependências, conteúdo de terceiros e materiais externos mantêm suas próprias licenças.
+
+Melhorias podem ser propostas por pull requests. A incorporação ao projeto original depende de análise e aceitação dos mantenedores; não é automática. Não se exige citação acadêmica em cada utilização ou produto derivado.

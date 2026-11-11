@@ -43,6 +43,7 @@
     "README.en.md",
     "docs/ingestion-strategies.md"
   ],
+  "license": "MIT",
   "main": "./dist/index.js",
   "name": "remote-ingestion-retrieval",
   "private": true,
