@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Knowledge Pipeline Explorer · Remote Ingestion Retrieval | Cecil-IA Labs</title>
+<meta name="description" content="Explore URL discovery, document extraction, normalized Markdown, chunking, vector synchronization and search in Remote Ingestion Retrieval. Interactive, synthetic, fully offline demo.">
+<meta name="theme-color" content="#f6f4ed">
+<link rel="canonical" href="https://cecil-ia-labs.github.io/remote-ingestion-retrieval/">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Remote Ingestion Retrieval — Knowledge Pipeline Explorer">
+<meta property="og:description" content="Understand every stage from scattered pages to searchable knowledge, with inspectable synthetic examples.">
+<meta property="og:url" content="https://cecil-ia-labs.github.io/remote-ingestion-retrieval/">
+<link rel="stylesheet" href="./studio.css">
+<script type="module" src="./studio.mjs"></script>
+</head>
+<body>
+<a class="skip" href="#explorer">Skip to interactive explorer</a>
+<header class="site-nav shell">
+  <a class="logo" href="https://cecil-ia-labs.github.io/" aria-label="Cecil-IA Labs open-source observatory"><span class="logo-mark" aria-hidden="true">⌘</span><span>CECIL/IA <small>OPEN SOURCE SYSTEMS</small></span></a>
+  <nav aria-label="Primary navigation"><a href="#understand">How it works</a><a href="#explorer">Explorer</a><a href="#architecture">Architecture</a></nav>
+  <a class="source-link" href="https://github.com/cecil-ia-labs/remote-ingestion-retrieval">SOURCE CODE <span aria-hidden="true">↗</span></a>
+</header>
+
+<main>
+<section class="hero shell">
+  <div class="hero-copy">
+   <p class="eyebrow"><span class="pulse" aria-hidden="true"></span> TYPESCRIPT · OPEN SOURCE · INGESTION + RETRIEVAL</p>
+   <h1>From scattered pages<br>to <em>searchable</em><br>knowledge.</h1>
+   <p class="hero-intro">A URL is only the beginning. Follow how an ingestion system discovers sources, extracts useful content, builds meaningful chunks, and prepares them for vector search.</p>
+   <div class="hero-actions"><a class="button-primary" href="#explorer">Explore the pipeline <span>↘</span></a><a class="button-secondary" href="https://github.com/cecil-ia-labs/remote-ingestion-retrieval/blob/main/README.en.md">Read technical documentation ↗</a></div>
+   <div class="hero-metrics"><div><strong>06</strong><span>observable stages</span></div><div><strong>02</strong><span>source profiles</span></div><div><strong>00</strong><span>external demo calls</span></div></div>
+  </div>
+  <div class="hero-illustration" aria-label="Diagram of source documents flowing through a pipeline into searchable chunks" role="img">
+    <div class="art-stamp">ILLUSTRATIVE SYSTEM VIEW</div>
+    <div class="art-layer art-sources"><span class="mini-heading">01 · SOURCES</span><div class="paper"><i></i><i></i><i class="short"></i></div><div class="paper paper-offset"><i></i><i class="short"></i><i></i></div></div>
+    <span class="art-arrow first" aria-hidden="true">→</span>
+    <div class="art-layer art-pipeline"><span class="mini-heading">02 · PROCESS</span><span class="processor">◈</span><span class="processor-desc">MARKDOWN<br>CHUNKS<br>METADATA</span></div>
+    <span class="art-arrow second" aria-hidden="true">→</span>
+    <div class="art-layer art-store"><span class="mini-heading">03 · RETRIEVAL</span><div class="art-dots" aria-hidden="true"><b></b><b></b><b></b><b></b><b></b><b></b><b></b><b></b><b></b></div><span class="search-symbol">⌕</span></div>
+    <div class="hero-bottom">SOURCE → DOCUMENT → CHUNK → VECTOR RECORD → SEARCH RESULT</div>
+  </div>
+</section>
+
+<section class="concept-section" id="understand">
+  <div class="shell"><p class="eyebrow">01 / THE IDEA</p>
+  <div class="section-intro"><h2>Information doesn't<br>arrive <em>ready to query.</em></h2><p>A web page can contain navigation, repeated interface elements, multiple topics and unstable links. Ingestion turns that raw material into structured, traceable content. Retrieval then uses an index to find relevant passages.</p></div>
+  <div class="concept-grid">
+   <article><span class="concept-number">01</span><span class="concept-icon">↗</span><h3>Find the right sources</h3><p>Discover candidate pages, or select repository files from a pinned Git commit. A site is a <b>collection of documents</b>, not a single blob.</p></article>
+   <article><span class="concept-number">02</span><span class="concept-icon">≡</span><h3>Preserve what matters</h3><p>Extract useful content, normalize to Markdown and retain document titles, URLs, headings and source identity.</p></article>
+   <article><span class="concept-number">03</span><span class="concept-icon">◈</span><h3>Index with boundaries</h3><p>Chunk content, apply embeddings via the configured provider, and synchronize records without deleting unseen pages from partial crawls.</p></article>
+   <article><span class="concept-number">04</span><span class="concept-icon">⌕</span><h3>Retrieve with provenance</h3><p>Search for relevant passages and keep enough metadata to trace each result to its original document.</p></article>
+  </div></div>
+</section>
+
+<section id="explorer" class="explorer-section">
+<div class="shell">
+ <p class="eyebrow">02 / HANDS-ON WORKSHOP</p>
+ <div class="section-intro"><h2>Inspect every<br><em>transformation.</em></h2><p>Choose a fictional source, navigate the six stages, and inspect the artifacts that a pipeline would produce. Nothing is fetched or indexed here: this is a transparent, deterministic educational model.</p></div>
+ <div class="workspace">
+  <div class="workspace-toolbar">
+   <div><span class="toolbar-label">SOURCE PROFILE</span><div class="scenario-switch" role="group" aria-label="Select example source">
+    <button type="button" data-scenario="support" aria-pressed="true">◫ Website</button>
+    <button type="button" data-scenario="repository" aria-pressed="false">⑂ GitHub repository</button>
+   </div></div>
+   <label class="partial-switch"><input type="checkbox" id="partial-snapshot"><span>Simulate incomplete snapshot</span><small>See safe deletion rules</small></label>
+  </div>
+  <div class="workspace-breadcrumb"><span class="live-dot" aria-hidden="true"></span><span id="scenario-source">help.example.com</span><span class="breadcrumb-divider">/</span><strong id="scenario-namespace">customer_support</strong><span class="workspace-tag">SYNTHETIC DATA · LOCAL ONLY</span></div>
+  <nav id="stage-nav" class="stage-nav" aria-label="Pipeline steps"></nav>
+  <div class="workspace-body">
+   <aside class="stage-explainer">
+    <p class="toolbar-label" id="stage-number">STEP 01 / 06</p>
+    <h3 id="stage-title">Discover</h3>
+    <p class="stage-caption" id="stage-caption">Where are the documents?</p>
+    <div class="explain-rule"></div>
+    <p class="why-label">WHY IT MATTERS</p>
+    <p id="stage-why"></p>
+    <div class="stage-detail"><span>REAL PACKAGE MODULES</span><code id="stage-modules">src/discovery/</code></div>
+    <div class="stage-detail"><span>EXPECTED OUTPUT TYPE</span><strong id="stage-result-kind">Candidate URLs</strong></div>
+    <div class="nav-step"><button type="button" id="previous-stage">← Previous</button><button type="button" id="next-stage">Next step →</button></div>
+   </aside>
+   <div class="stage-inspector">
+    <div class="inspector-header"><div><span class="toolbar-label">STAGE OUTPUT · EXPLANATORY FIXTURE</span><h3 id="output-heading">Discovered URLs</h3></div><div id="output-count" class="output-count">03 DOCUMENTS</div></div>
+    <div id="document-toolbar" class="document-toolbar"><label for="document-select">INSPECT DOCUMENT</label><select id="document-select"></select></div>
+    <div id="stage-output" class="stage-output" aria-live="polite"></div>
+    <div id="search-region" class="search-region" hidden>
+      <label for="search-query">ASK A QUESTION ABOUT THESE EXAMPLE DOCUMENTS</label>
+      <div class="search-control"><input id="search-query" type="search" value="" placeholder="e.g. How can I reset my password?"><button id="search-run" type="button">Find passages ↗</button></div>
+      <p>Scores here are <b>simple word matches</b>, not embeddings or cosine similarity. Real vector search requires configured services.</p>
+    </div>
+    <div class="inspector-footer"><span id="status-label">COMPLETE EXAMPLE SNAPSHOT</span><span id="status-description">All three fictional pages were materialized</span></div>
+   </div>
+  </div>
+ </div>
+ <div class="explorer-footnote"><span class="circle-info">i</span> <p><b>Know what this model does not do:</b> no live crawling, no browser rendering, no real embeddings, no Weaviate/Qdrant connection, no measured recall, and no customer data. Inspectable artifacts are generated from authored fixtures to explain the project's real boundaries and API responsibilities.</p></div>
+</div>
+</section>
+
+<section class="architecture-section" id="architecture"><div class="shell">
+ <p class="eyebrow">03 / REAL ARCHITECTURE</p>
+ <div class="section-intro"><h2>One ingestion model.<br><em>Different downstream paths.</em></h2><p>The repository deliberately separates acquisition, normalized Markdown, vector records, and storage provider implementations. These choices affect operations, credentials and what can be safely reused.</p></div>
+ <div class="architecture-grid">
+  <article class="architecture-card"><div class="architecture-heading"><span class="architecture-symbol">01</span><span>HOST-PROVIDED EMBEDDINGS</span></div><h3>Vector indexing</h3><p><code>RemoteSourceIngestion</code> accepts an <code>EmbeddingProvider</code> plus a <code>VectorStore</code>. The host produces vectors; Qdrant and Weaviate implementations persist the resulting records.</p><div class="code-path">Markdown → chunks → embeddingProvider → VectorStore</div><small>Incremental reconciliation uses content fingerprints, pipeline revision and snapshot completeness.</small></article>
+  <article class="architecture-card alt"><div class="architecture-heading"><span class="architecture-symbol">02</span><span>FILE-BASED KNOWLEDGE STORE</span></div><h3>Knowledge-base adapters</h3><p><code>KnowledgeBaseVectorStoreAdapter</code> receives files and metadata. Weaviate/Qdrant adapters can split and use provider-native vectorization; Qdrant can also accept host embeddings.</p><div class="code-path">Markdown files → adapter → provider-specific indexing</div><small>File ingestion and precomputed-vector synchronization are different contracts; they must not be conflated.</small></article>
+ </div>
+ <div class="safety-grid">
+  <div><span class="safety-icon">⊘</span><h4>Private-network protection</h4><p>DNS resolution and redirects must honor URL safety rules. An interface sample does not establish that a remote URL was fetched.</p></div>
+  <div><span class="safety-icon">⧖</span><h4>Execution budgets</h4><p>Bound page count, bytes, elapsed time, chunk count and embedding inputs. Limits can produce partial results.</p></div>
+  <div><span class="safety-icon">◎</span><h4>Reconciliation safety</h4><p>An incomplete crawl cannot prove that missing documents were deleted from the source. Prevent destructive sync decisions.</p></div>
+  <div><span class="safety-icon">◇</span><h4>Traceable results</h4><p>Preserve canonical URLs, headings, namespace and run correlation so retrieved snippets remain auditable.</p></div>
+ </div>
+</div></section>
+
+<section class="code-section" id="integrate"><div class="shell code-section-grid">
+ <div><p class="eyebrow">04 / BUILD WITH THE LIBRARY</p><h2>From the model<br>to <em>real code.</em></h2><p>This repository is a Node.js/TypeScript library, not a publicly published npm package. Install from source and inject your provider implementations; importing the entry point does not start a crawl.</p>
+ <div class="code-links"><a href="https://github.com/cecil-ia-labs/remote-ingestion-retrieval/blob/main/README.en.md">English README ↗</a><a href="https://github.com/cecil-ia-labs/remote-ingestion-retrieval/blob/main/docs/ingestion-strategies.md">Discovery strategies ↗</a></div></div>
+ <div class="code-editor"><div class="code-editor-header"><span>example.ts · INTERFACE SKETCH</span><button type="button" id="copy-code">Copy</button></div><pre><code id="integration-code">import { RemoteSourceIngestion } from "remote-ingestion-retrieval";
+
+// Supply implementations from your host application.
+const ingestion = new RemoteSourceIngestion({
+  pipelineRevision: "docs-v1:embedding-v1",
+  embeddingProvider,
+  vectorStore
+});
+
+const now = new Date();
+try {
+  const outcome = await ingestion.runSourceInsertion({
+    source: {
+      id: "product-docs",
+      type: "website",
+      url: "https://docs.example.com/",
+      createdAt: now,
+      updatedAt: now
+    },
+    namespace: "product_docs"
+  });
+  console.log(outcome.status);
+} finally {
+  await ingestion.close();
+}</code></pre><p class="code-editor-foot">The embedding provider and vector store are intentionally undefined placeholders. This example is not executable without host configuration.</p></div>
+</div></section>
+
+</main>
+<footer class="site-footer shell"><a href="https://cecil-ia-labs.github.io/">← OPEN SOURCE OBSERVATORY</a><span>CECIL-IA LABS · REMOTE INGESTION RETRIEVAL · 2026</span><a href="https://github.com/cecil-ia-labs/remote-ingestion-retrieval">GITHUB ↗</a></footer>
+</body></html>
