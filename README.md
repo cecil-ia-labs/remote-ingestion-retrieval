@@ -471,4 +471,11 @@ AUTO_UPLOAD_MAX_ELAPSED_MS=3600000 AUTO_UPLOAD_CONCURRENCY=8 npm run upload:vect
 
 `--repair-invalid-associations` is allowed only with `--resume-upload-report`. It explicitly permits detaching and recreating only invalid associations in the same Vector Store, using the same File ID, attributes, and requested strategy. It does not delete the Files API resource, create a new store, or upload files again. Valid associations remain untouched. The affected file may temporarily leave search results while its association is reprocessed.
 
+Primeiro o comando repara uma única associação e verifica integralmente o resultado. Só depois desse primeiro reparo confirmado processa as demais, com concorrência limitada; se ele falhar, as restantes não são alteradas. Falhas de processamento e erros inesperados não são tratados como autorização para um reparo indiscriminado. Esta opção não reduz a validação nem aceita chunking nativo `0/0` como sucesso.
+
+## Licença e contribuições
+
+O código e a documentação originais deste projeto são distribuídos sob a [Licença MIT](LICENSE), com uso comercial, modificação e redistribuição permitidos mediante a preservação dos avisos de copyright e licença aplicáveis. Dependências, conteúdo de terceiros e materiais externos mantêm suas próprias licenças.
+
+Melhorias podem ser propostas por pull requests. A incorporação ao projeto original depende de análise e aceitação dos mantenedores; não é automática. Não se exige citação acadêmica em cada utilização ou produto derivado.
 The command repairs one association first and fully verifies that canary. Only after it passes does bounded concurrent repair of the remaining entries begin; a failed canary stops before the others are changed. Processing failures and unexpected errors are not blindly repaired. This option does not weaken validation or accept native `0/0` chunking as success.
