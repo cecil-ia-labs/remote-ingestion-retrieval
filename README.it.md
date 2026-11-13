@@ -1,6 +1,10 @@
 # Remote Ingestion Retrieval
 
-[Português](README.pt.md) | [English](README.en.md) | Italiano
+**Lingue:** [English (predefinito)](README.md) · [Português (Brasil)](README.pt.md) · **Italiano**
+
+**[Esplora il Knowledge Pipeline Explorer](https://cecil-ia-labs.github.io/remote-ingestion-retrieval/)** — una dimostrazione interattiva di scoperta, acquisizione, normalizzazione Markdown, suddivisione in chunk, sincronizzazione vettoriale e recupero. Due sorgenti sintetiche mostrano anche perché uno snapshot incompleto non autorizza la cancellazione automatica dei vettori.
+
+La dimostrazione **non esegue crawling, embeddings o ricerche reali**: utilizza documenti fittizi e corrispondenze lessicali locali, senza API esterne o credenziali. Vedi le [limitazioni del showroom](showcase/README.md).
 
 Libreria TypeScript per trasformare URL e siti web in Markdown, suddividere il contenuto e inserirlo in una base di conoscenza. Include acquisizione HTTP e tramite browser, individuazione delle pagine, metadati, limiti di esecuzione e sincronizzazione incrementale dei vettori.
 
