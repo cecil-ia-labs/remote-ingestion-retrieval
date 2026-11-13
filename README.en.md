@@ -1,6 +1,12 @@
 # Remote Ingestion Retrieval
 
-[Português](README.pt.md) | **English** | [Italiano](README.it.md)
+**Languages:** **[English (default)](README.md)** · [Português (Brasil)](README.pt.md) · [Italiano](README.it.md)
+
+**[Explore the Knowledge Pipeline Explorer](https://cecil-ia-labs.github.io/remote-ingestion-retrieval/)** — an interactive educational showroom explaining discovery, acquisition, normalized Markdown, chunking, vector synchronization and retrieval. Try a simulated support website or GitHub repository and inspect why incomplete crawls must not authorize vector deletion.
+
+The demo uses **explicitly synthetic fixtures** and lexical word-overlap search. It does not crawl websites, produce embeddings, query external vector stores, or require credentials. For a detailed technical explanation, see the [showroom README](showcase/README.md).
+
+This repository currently declares `private: true` in `package.json`: install it from source, not an unverified public npm registry entry.
 
 A TypeScript library that turns URLs and websites into Markdown, splits the content, and inserts it into a knowledge base. It includes HTTP and browser acquisition, page discovery, metadata, execution limits, and incremental vector synchronization.
 
