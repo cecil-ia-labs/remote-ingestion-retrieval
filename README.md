@@ -1,78 +1,48 @@
 # Remote Ingestion Retrieval
 
-[Português](README.pt.md) | [Italiano](README.it.md) | [English](README.en.md)
+**Languages:** **[English (default)](README.md)** · [Português (Brasil)](README.pt.md) · [Italiano](README.it.md)
 
-Biblioteca TypeScript para transformar URLs e websites em Markdown, dividir o conteúdo e inseri-lo em uma base de conhecimento. Inclui aquisição HTTP e por navegador, descoberta de páginas, metadados, limites de execução e sincronização incremental de vetores.
+**[Explore the Knowledge Pipeline Explorer](https://cecil-ia-labs.github.io/remote-ingestion-retrieval/)** — an interactive educational showroom explaining discovery, acquisition, normalized Markdown, chunking, vector synchronization and retrieval. Try a simulated support website or GitHub repository and inspect why incomplete crawls must not authorize vector deletion.
 
-O pacote oferece duas formas de armazenamento:
+The demo uses **explicitly synthetic fixtures** and lexical word-overlap search. It does not crawl websites, produce embeddings, query external vector stores, or require credentials. For a detailed technical explanation, see the [showroom README](showcase/README.md).
 
-- **Vetores pré-calculados:** `RemoteSourceIngestion` recebe um `EmbeddingProvider` e um `VectorStore`. Os adapters `WeaviateVectorStore` e `QdrantVectorStore` gravam e excluem vetores, incluindo instalações próprias.
-- **Arquivos Markdown:** `KnowledgeBaseVectorStoreAdapter` recebe arquivos e metadados. Os adapters Weaviate/Qdrant dividem o texto e usam a vetorização nativa do cluster; o Qdrant também aceita embeddings fornecidos pelo host.
+This repository currently declares `private: true` in `package.json`: install it from source, not an unverified public npm registry entry.
 
-Esses contratos têm responsabilidades diferentes. Uma API de upload de arquivos não precisa implementar o contrato de vetores pré-calculados.
+A TypeScript library that turns URLs and websites into Markdown, splits the content, and inserts it into a knowledge base. It includes HTTP and browser acquisition, page discovery, metadata, execution limits, and incremental vector synchronization.
 
-## Agente de voz com o KB Qdrant
+The package provides two storage paths:
 
-O runner local oferece conversa por voz no navegador usando OpenAI Realtime/WebRTC e a ferramenta `search_knowledge_base`. A ferramenta reutiliza `QdrantSearchAdapter` para recuperar texto e proveniência do KB existente; não cria collections, não reenfileira ingestão e não modifica os pontos.
+- **Precomputed vectors:** `RemoteSourceIngestion` receives an `EmbeddingProvider` and a `VectorStore`. `WeaviateVectorStore` and `QdrantVectorStore` write and delete vectors, including on self-hosted installations.
+- **Markdown files:** `KnowledgeBaseVectorStoreAdapter` receives files and metadata. The Weaviate/Qdrant adapters split text and use native cluster vectorization; Qdrant also accepts embeddings supplied by the host.
 
-Com as dependências instaladas e o `.env` configurado para o cluster Qdrant usado na ingestão:
+These contracts have different responsibilities. A file-upload API does not have to implement the precomputed-vector contract.
 
-```bash
-npm run voice-agent
-```
+## Common provider configuration
 
-Abra [localhost:4318](http://localhost:4318), clique em **Avvia conversazione** e permita o microfone. A interface está em italiano, mostra transcrições e fontes da última consulta e permite silenciar o microfone e encerrar a conversa. Falar durante uma resposta interrompe o áudio pelo VAD da Realtime API e cancela buscas pendentes da pergunta anterior. O navegador transmite áudio à OpenAI; as chaves da OpenAI e do Qdrant permanecem no servidor local. Nenhuma conversa ou gravação é salva em disco por este runner.
+`AUTO_VECTOR_STORE_BASE_URL` is the primary URL of the selected storage provider. `resolveVectorStoreProviderConfiguration()` resolves the shared configuration consumed by `createKnowledgeBaseVectorStoreAdapter()` and `createPrecomputedVectorStore()`.
 
-O padrão aponta para o KB desta ingestão: collection **`IncresoSiteNew`**, namespace **`incresositenew`**, embeddings nativos **`sentence-transformers/all-MiniLM-L6-v2`**, **384 dimensões**. Collection e namespace são fixados pelo servidor e não podem ser escolhidos pela ferramenta nem pela requisição do navegador. Os parâmetros de embeddings devem corresponder aos usados na ingestão; `AUTO_EMBEDDING_*` prevalece sobre o modelo/dimensões de fallback. O modo `provided` reutiliza `AUTO_EMBEDDING_PROVIDER_MODULE`.
-
-A fala e as instruções da assistente estão em italiano, com pronúncia, sotaque neutro e cadência de uma italiana nativa. As consultas ao KB também usam italiano; outro idioma falado exige pedido explícito do usuário. A apresentação acontece uma única vez na abertura, mesmo quando interrompida. As próximas respostas continuam a conversa diretamente. Essas características de fala são orientadas por prompt e dependem da síntese de áudio do modelo. O [guia italiano da demo](README.it.md#demo-vocale-increso--avvio-rapido) contém as instruções para executar o pacote compartilhado. As consultas da demo acessam apenas o Qdrant, sem buscar conteúdo ao vivo no site da empresa.
-
-| Variável | Padrão / uso |
+| Variable | Purpose |
 | --- | --- |
-| `OPENAI_API_KEY` | Chave existente, com acesso ao modelo Realtime e saldo. Usa a API oficial da OpenAI. |
-| `AUTO_VECTOR_STORE_BASE_URL` / `AUTO_VECTOR_STORE_API_KEY` | Conexão do cluster Qdrant existente; também aceita os aliases `QDRANT_URL` / `QDRANT_API_KEY`. |
-| `VOICE_KB_COLLECTION` | `IncresoSiteNew`; independente da collection de upload em `AUTO_VECTOR_STORE_COLLECTION`. |
-| `VOICE_KB_NAMESPACE` | `incresositenew`; independente de `SOURCE_ID` e `AUTO_KB_NAMESPACE`. |
-| `VOICE_KB_DOMAIN` | Vazio: sem restrição adicional de domínio; namespace sempre obrigatório. |
-| `VOICE_KB_LANGUAGE` | `italiano`; orienta o idioma das consultas, preservando o idioma falado pelo usuário. |
-| `VOICE_KB_TOP_K` | `4`; de 1 a 10 trechos, com contexto total limitado a 16000 caracteres. |
-| `VOICE_REALTIME_MODEL` | `gpt-realtime-2.1`; precisa estar disponível para a chave utilizada. |
-| `VOICE_REALTIME_VOICE` | `marin`. |
-| `VOICE_PORT` | `4318`; servidor restrito a `127.0.0.1`. |
-| `VOICE_MAX_SESSION_SECONDS` | `600`; de 1 a 3600, encerramento automático pelo navegador. |
+| `AUTO_VECTOR_STORE_PROVIDER` | `weaviate`, `qdrant`, `openai-compatible`, or `custom`. |
+| `AUTO_VECTOR_STORE_BASE_URL` | HTTP(S) endpoint of the storage API. |
+| `AUTO_VECTOR_STORE_API_KEY` | Key for the selected storage provider. |
+| `AUTO_VECTOR_STORE_COLLECTION` | Weaviate/Qdrant collection. |
+| `AUTO_VECTOR_STORE_TIMEOUT_MS` | Request timeout; default 30000. |
+| `AUTO_VECTOR_STORE_BATCH_SIZE` | Batch size; default 100, between 1 and 200 in shared configuration. |
+| `AUTO_VECTOR_STORE_MAX_CHUNKS` | Limit before embedding requests; default 10000. |
+| `AUTO_VECTOR_STORE_MAX_CHUNK_CHARACTERS` | Local splitting limit; default 6400 characters. |
+| `AUTO_VECTOR_STORE_VERIFICATION_ATTEMPTS` | Verification attempts; default 3. |
+| `AUTO_VECTOR_STORE_VERIFICATION_DELAY_MS` | Delay between attempts; default 250, accepts zero. |
+| `AUTO_EMBEDDING_MODE` | `native` or `provided`; defaults to `provided` when an embedding module is selected and the mode is absent. |
+| `AUTO_EMBEDDING_MODEL` / `AUTO_EMBEDDING_DIMENSIONS` | Embedding model and dimensions. |
+| `AUTO_EMBEDDING_BASE_URL` / `AUTO_EMBEDDING_API_KEY` | External embedding-service connection, supplied to the host module. |
+| `AUTO_EMBEDDING_PROVIDER_MODULE` | Module exporting `embeddingProvider` or `createEmbeddingProvider(configuration)`. |
 
-O assistente recebe instruções para consultar o KB antes de respostas factuais, reconhecer falta de informação e tratar documentos como dados externos. O servidor limita cada resposta de busca e o cliente permite até duas consultas por pergunta. São instruções de fundamentação para o modelo, não uma garantia de exatidão de toda resposta. O áudio é gerenciado pelo WebRTC; não há conversão manual de PCM ou dependências adicionais de áudio.
+Use the shared `AUTO_*` configuration for every provider; older aliases remain supported in code but are omitted from the environment reference. A key belonging to another provider is never reused. `QDRANT_DISTANCE` remains provider-specific because it selects a Qdrant collection metric.
 
-Este runner atende ao uso local no navegador. Não inclui integração SIP/telefone nem autenticação para publicação em rede. Acesso remoto requer uma integração própria. O comando compila o projeto antes de iniciar; iniciar o servidor não abre uma sessão paga até o usuário clicar em **Avvia conversazione**.
+When migrating an older `.env`, remove generic values pointing to another service: they now take precedence for Weaviate too. The implementation does not modify `.env` or migrate credentials automatically.
 
-Implementação conforme a documentação oficial de [WebRTC](https://developers.openai.com/api/docs/guides/voice-webrtc) e [function calling na Realtime API](https://developers.openai.com/api/docs/guides/realtime-conversations).
-
-## Configuração comum dos providers
-
-`AUTO_VECTOR_STORE_BASE_URL` é a URL principal do armazenamento selecionado. A configuração compartilhada é resolvida por `resolveVectorStoreProviderConfiguration()` e consumida por `createKnowledgeBaseVectorStoreAdapter()` e `createPrecomputedVectorStore()`.
-
-| Variável | Responsabilidade |
-| --- | --- |
-| `AUTO_VECTOR_STORE_PROVIDER` | `weaviate`, `qdrant`, `openai-compatible` ou `custom`. |
-| `AUTO_VECTOR_STORE_BASE_URL` | Endpoint HTTP(S) da API do armazenamento. |
-| `AUTO_VECTOR_STORE_API_KEY` | Chave do armazenamento selecionado. |
-| `AUTO_VECTOR_STORE_COLLECTION` | Collection dos providers Weaviate/Qdrant. |
-| `AUTO_VECTOR_STORE_TIMEOUT_MS` | Timeout de requisição; padrão 30000. |
-| `AUTO_VECTOR_STORE_BATCH_SIZE` | Lote; padrão 100, entre 1 e 200 na configuração comum. |
-| `AUTO_VECTOR_STORE_MAX_CHUNKS` | Limite antes das chamadas de embeddings; padrão 10000. |
-| `AUTO_VECTOR_STORE_MAX_CHUNK_CHARACTERS` | Divisão local; padrão 6400 caracteres. |
-| `AUTO_VECTOR_STORE_VERIFICATION_ATTEMPTS` | Tentativas de confirmação; padrão 3. |
-| `AUTO_VECTOR_STORE_VERIFICATION_DELAY_MS` | Intervalo entre tentativas; padrão 250, aceita zero. |
-| `AUTO_EMBEDDING_MODE` | `native` ou `provided`; seleciona `provided` por padrão quando há módulo de embeddings. |
-| `AUTO_EMBEDDING_MODEL` / `AUTO_EMBEDDING_DIMENSIONS` | Modelo e dimensões dos embeddings. |
-| `AUTO_EMBEDDING_BASE_URL` / `AUTO_EMBEDDING_API_KEY` | Conexão de um serviço externo de embeddings, fornecida ao módulo do host. |
-| `AUTO_EMBEDDING_PROVIDER_MODULE` | Módulo que exporta `embeddingProvider` ou `createEmbeddingProvider(configuration)`. |
-
-Use as variáveis genéricas `AUTO_*` documentadas no [.env.example](.env.example). Os aliases legados foram removidos do exemplo e da referência de uso; a compatibilidade permanece no código. Nenhuma chave específica de outro provider é reutilizada. `QDRANT_DISTANCE` permanece como opção atual, pois configura a métrica da collection Qdrant.
-
-Ao migrar um `.env` antigo, remova valores genéricos antigos que apontem para outro serviço: eles agora têm precedência também no Weaviate. A implementação não altera seu arquivo `.env` nem migra credenciais automaticamente.
-
-O endpoint de embeddings externo é independente do armazenamento: `AUTO_EMBEDDING_BASE_URL` não substitui `AUTO_VECTOR_STORE_BASE_URL`. Embeddings nativos do Weaviate/Qdrant usam a chave do cluster. O Weaviate também permite configurar a URL de seu vectorizer nativo por `AUTO_EMBEDDING_BASE_URL`; o Qdrant nativo usa Cloud Inference do próprio cluster e rejeita um endpoint externo nesse modo.
+An external embedding endpoint is independent of storage: `AUTO_EMBEDDING_BASE_URL` does not replace `AUTO_VECTOR_STORE_BASE_URL`. Native Weaviate/Qdrant embeddings use the cluster key. Weaviate also supports a native vectorizer URL through `AUTO_EMBEDDING_BASE_URL`; native Qdrant uses its own Cloud Inference and rejects an external endpoint in that mode.
 
 ```ts
 import {
@@ -82,38 +52,37 @@ import {
 
 const configuration = resolveVectorStoreProviderConfiguration(process.env);
 const adapter = await createKnowledgeBaseVectorStoreAdapter(configuration);
-// Mesmo contrato de arquivos para o provider selecionado.
 const result = await adapter.ingest({ name: "Support", namespace: "support", files });
 ```
 
-Módulos customizados de Vector Store recebem essa configuração em `createVectorStoreAdapter(configuration)`; módulos legados sem argumentos continuam compatíveis. Sem provider explícito, um módulo selecionado usa `custom`; sem módulo, o fallback permanece `openai-compatible`.
+Custom Vector Store modules receive this configuration in `createVectorStoreAdapter(configuration)`; older factories without arguments remain compatible. Without an explicit provider, selecting a module defaults to `custom`; otherwise the default is `openai-compatible`.
 
-## Instalação
+## Installation
 
-Requer Node.js 22 ou superior.
+Requires Node.js 22 or later.
 
 ```bash
 npm ci
 npm run build
 ```
 
-Para páginas que dependem de JavaScript, instale o Chrome correspondente ao Puppeteer:
+For JavaScript-dependent pages, install the Chrome build matching Puppeteer:
 
 ```bash
 npx puppeteer browsers install chrome
 ```
 
-Em outro projeto local, instale este diretório como dependência. O nome do pacote é `remote-ingestion-retrieval`:
+Install this directory as a dependency in another local project:
 
 ```bash
-npm install /caminho/para/remote-ingestion-retrieval
+npm install /path/to/remote-ingestion-retrieval
 ```
 
-O entry point compilado é `dist/index.js`. Importar a biblioteca não inicia um crawl, abre o navegador nem chama providers. Para executar uma ingestão, use os exemplos abaixo ou o runner manual. Não execute `node src/index.ts`.
+The package name is `remote-ingestion-retrieval`; its compiled entry point is `dist/index.js`. Importing it does not start a crawl, launch a browser, or call providers. Do not run `node src/index.ts`; use the library or the manual runner below.
 
-## Ingestão manual com Weaviate Cloud
+## Manual ingestion with Weaviate Cloud
 
-Crie `.env` a partir de `.env.example` e configure uma fonte e uma collection:
+Copy `.env.example` to `.env` and configure a source and collection:
 
 ```dotenv
 SOURCE_ID=product-docs
@@ -127,69 +96,51 @@ AUTO_VECTOR_STORE_COLLECTION=ProductDocs
 AUTO_EMBEDDING_MODEL=Snowflake/snowflake-arctic-embed-l-v2.0
 ```
 
-Execute:
-
 ```bash
 npm run ingest
 ```
 
-O runner descobre páginas, materializa Markdown, enriquece os metadados, aplica o splitter e envia o resultado ao adapter. A seleção `weaviate` usa os módulos incluídos neste repositório; não depende do checkout de benchmarks.
+The runner discovers pages, materializes Markdown, enriches metadata, applies the splitter, and uploads the result automatically. The `weaviate` provider uses modules included in this repository.
 
-Ao terminar, o runner fecha o navegador usado na descoberta e na materialização, grava o relatório e exibe `Ingestion completed successfully` quando a indexação é concluída. Se a cobertura for parcial, a mensagem inclui `with partial coverage`. Os códigos de saída são `0` para conclusão completa, `2` para resultado parcial ou upload não realizado e `1` para falha.
+A collection is created if missing. An existing collection must match the vectorizer, model, embedding configuration, and required properties. Incompatible schemas are rejected rather than changed. Use a dedicated collection with one unnamed vector. Weaviate collection names must start with an uppercase letter and contain only letters, numbers, and `_`.
 
-A collection é criada se não existir. Uma collection existente precisa ter o mesmo vectorizer, modelo, configuração de embeddings e propriedades esperadas. O adapter rejeita incompatibilidades em vez de alterar o schema existente. Use uma collection dedicada, com um vetor sem nome. Nomes devem começar com letra maiúscula e conter somente letras, números e `_`.
+The `text2vec-weaviate` vectorizer generates embeddings during object import and is available on Weaviate Cloud. This integration does not make a separate `/embeddings` call. See the [official Weaviate embeddings documentation](https://docs.weaviate.io/weaviate/model-providers/weaviate/embeddings).
 
-O vectorizer `text2vec-weaviate` gera os embeddings na importação dos objetos e está disponível no Weaviate Cloud. Não há uma chamada separada a `/embeddings` nesta integração. Consulte a [documentação oficial dos embeddings Weaviate](https://docs.weaviate.io/weaviate/model-providers/weaviate/embeddings) para modelos, dimensões e disponibilidade.
+Original Markdown is stored under `kb/<SOURCE_ID>/`. Split files actually submitted, with `manifest.json`, are stored under `kb/<SOURCE_ID>/split/<id>/`. Run reports are stored under `data/ingestion-results/<SOURCE_ID>/`. Weaviate results identify the collection and objects `{ filename, id, chunkId }`, not OpenAI Files API uploads.
 
-Os arquivos originais ficam em `kb/<SOURCE_ID>/`. Os arquivos efetivamente enviados após o splitter e seu `manifest.json` ficam em `kb/<SOURCE_ID>/split/<id>/`. Os relatórios de execução ficam em `data/ingestion-results/<SOURCE_ID>/` e incluem o resultado do adapter. O resultado Weaviate identifica a collection e os objetos `{filename, id, chunkId}`; não representa uploads pela API Files da OpenAI.
+File ingestion imports/upserts snapshots and does not delete old chunks of changed files. Use a new collection for isolated snapshots or the incremental precomputed-vector pipeline for reconciliation. A failed batch may leave objects persisted; success requires all batches and verification to finish. IDs are deterministic for the collection, namespace, and chunk identity.
 
-O runner faz importação/upsert, sem remover objetos antigos de arquivos alterados. Para snapshots isolados, escolha outra collection; para atualizações com remoção de conteúdo anterior, use o pipeline incremental com vetores pré-calculados. Falhas de um lote podem ocorrer depois de outros objetos terem sido persistidos: o adapter verifica o status de cada objeto e só retorna sucesso após todos os lotes terminarem. IDs são determinísticos por collection, namespace e identidade do chunk.
+### Runner limits and metadata
 
-### Configuração do Weaviate
-
-| Variável | Uso / padrão |
+| Variable | Default / purpose |
 | --- | --- |
-| `AUTO_VECTOR_STORE_BASE_URL` | Endpoint do cluster; pode terminar em `/v1`. Obrigatório. |
-| `AUTO_VECTOR_STORE_COLLECTION` | Collection dedicada. Obrigatório. |
-| `AUTO_VECTOR_STORE_API_KEY` | Chave do cluster; mantida somente no ambiente local. |
-| `AUTO_EMBEDDING_MODEL` | `Snowflake/snowflake-arctic-embed-l-v2.0`. |
-| `AUTO_EMBEDDING_DIMENSIONS` | Dimensões opcionais, suportadas pelo modelo escolhido. |
-| `AUTO_EMBEDDING_BASE_URL` | Endpoint opcional do serviço de embeddings configurado no vectorizer. |
-| `AUTO_VECTOR_STORE_TIMEOUT_MS` | Timeout por requisição; `30000`. |
-| `AUTO_VECTOR_STORE_BATCH_SIZE` | Objetos por lote; `100`, entre 1 e 200. |
-| `AUTO_VECTOR_STORE_MAX_CHUNK_CHARACTERS` | Tamanho do splitter local do adapter; `6400` caracteres. |
+| `AUTO_MAX_PAGES` | 100 discovered pages. |
+| `AUTO_MAX_DEPTH` | Depth 4. |
+| `AUTO_CRAWL_CONCURRENCY` | 4 discovery operations. |
+| `AUTO_MATERIALIZATION_CONCURRENCY` | 4 document materializations. |
+| `AUTO_MAX_KB_FILES` | 100 source documents, before splitting. |
+| `AUTO_MAX_SPLIT_FILES` | 10000 generated files, independent of source-document count. |
+| `AUTO_MAX_KB_BYTES` | 50 MiB of Markdown; checked after splitting too. |
+| `AUTO_SPLITTER_MAX_CHARS` | Structural splitter: 6400 characters per segment. |
+| `AUTO_SPLITTER_MAX_INPUT_CHARACTERS` | 3000000 characters before splitting the collection. |
+| `AUTO_METADATA_MODE` | `local`, without model calls; `model` uses the selected enricher. |
+| `AUTO_MARKDOWN_SPLITTER_MODULE` | Optional splitter instance/factory module. |
+| `AUTO_VECTOR_STORE_ADAPTER_MODULE` | Optional adapter instance/factory module. |
+| `AUTO_METADATA_ENRICHER_MODULE` | Optional metadata enricher instance/factory module. |
 
-O tamanho em caracteres não garante uma contagem exata de tokens nem overlap. O adapter Weaviate rejeita `request.chunking` com parâmetros de tokens; o runner omite esse campo para `AUTO_VECTOR_STORE_PROVIDER=weaviate`.
+Acquisition limits include `AUTO_MAX_ELAPSED_MS`, `AUTO_PAGE_TIMEOUT_MS`, `AUTO_MAX_BYTES_PER_DOCUMENT`, and `AUTO_MAX_FAILURES`. Consult reports to distinguish a partial run from a complete source snapshot. `.env.example` documents all variables, defaults, ranges, and aliases.
 
-### Limites e metadados do runner
+Local metadata derives `domain`, `tags`, and `keywords` from content and page hierarchy. Model mode caches results by provider, domain, URL, and content hash. Its settings include `AUTO_METADATA_MAX_REQUESTS` (100), `AUTO_METADATA_MAX_INPUT_CHARS` (3000000), `AUTO_METADATA_MAX_CHARS` (30000), `AUTO_METADATA_MODEL`, and `AUTO_METADATA_CONCURRENCY`. Request and character limits are not a monetary spending cap.
 
-| Variável | Padrão / finalidade |
-| --- | --- |
-| `AUTO_MAX_PAGES` | 100 páginas descobertas. |
-| `AUTO_MAX_DEPTH` | Profundidade 4. |
-| `AUTO_CRAWL_CONCURRENCY` | 4 operações de descoberta. |
-| `AUTO_MATERIALIZATION_CONCURRENCY` | 4 materializações. |
-| `AUTO_MAX_KB_FILES` | 100 documentos de origem, antes do splitter. |
-| `AUTO_MAX_SPLIT_FILES` | 10000 arquivos gerados pelo splitter, independentemente da quantidade de documentos. |
-| `AUTO_MAX_KB_BYTES` | 50 MiB de Markdown; aplicado também ao resultado do splitter. |
-| `AUTO_SPLITTER_MAX_CHARS` | Splitter estrutural do runner: 6400 caracteres por segmento. |
-| `AUTO_SPLITTER_MAX_INPUT_CHARACTERS` | 3.000.000 caracteres antes de executar o splitter sobre a coleção. |
-| `AUTO_METADATA_MODE` | `local`, sem chamadas a modelos; `model` usa um enricher fornecido. |
-| `AUTO_MARKDOWN_SPLITTER_MODULE` | Módulo opcional que exporta `markdownSplitter` ou `createMarkdownSplitter()`. |
-| `AUTO_VECTOR_STORE_ADAPTER_MODULE` | Módulo opcional que exporta `vectorStoreAdapter` ou `createVectorStoreAdapter()`. |
-| `AUTO_METADATA_ENRICHER_MODULE` | Módulo opcional que exporta `metadataEnricher` ou `createMetadataEnricher()`. |
+Built-in Weaviate/Qdrant providers take precedence over an adapter module. Without an explicit module, `openai-compatible` uses the bundled OpenAI adapter; `custom` uses a host module. Only the legacy model enricher still defaults to the sibling benchmark project; select `AUTO_METADATA_ENRICHER_MODULE` in other checkouts. Local metadata does not need that external module.
 
-Os limites de tempo e aquisição também podem ser ajustados com `AUTO_MAX_ELAPSED_MS`, `AUTO_PAGE_TIMEOUT_MS`, `AUTO_MAX_BYTES_PER_DOCUMENT` e `AUTO_MAX_FAILURES`. A saída local e os relatórios devem ser consultados para distinguir execução parcial de uma base completa.
-
-O modo local deriva `domain`, `tags` e `keywords` do conteúdo e da hierarquia das páginas. O modo de modelo mantém cache por provider, domínio, URL e hash; seus limites são `AUTO_METADATA_MAX_REQUESTS` (100), `AUTO_METADATA_MAX_INPUT_CHARS` (3.000.000), `AUTO_METADATA_MAX_CHARS`, `AUTO_METADATA_MODEL` e `AUTO_METADATA_CONCURRENCY`. Os limites de requisições e caracteres não são um teto monetário.
-
-Os providers integrados `weaviate` e `qdrant` têm precedência sobre `AUTO_VECTOR_STORE_ADAPTER_MODULE`. O modo `openai-compatible` usa o adapter OpenAI incluído neste projeto quando não há módulo explícito; `custom` usa um módulo fornecido pelo host. Apenas o enricher de modelo legado ainda tem fallback no projeto irmão `../3_benchmarks/realtime-compare-mcp-x-function/MarkdownSplitter/`; configure `AUTO_METADATA_ENRICHER_MODULE` em outros checkouts. Os fluxos com metadados locais e splitter estrutural funcionam sem esse módulo externo.
+Weaviate/Qdrant local splitting counts characters, not exact tokens or overlap. Their file adapters reject token-based `request.chunking`; the runner omits that field for adapters declaring `supportsTokenChunking = false`.
 
 ## MarkdownSplitter
 
-### Divisão local
+### Local splitting
 
-`StructuralMarkdownSplitter` é o padrão da fachada e do runner. Preserva o texto e offsets UTF-16, prefere limites de parágrafos e não chama modelos. Um limite pode dividir blocos longos de código ou tabelas; injete outro splitter quando precisar preservar esses blocos integralmente.
+`StructuralMarkdownSplitter` is the default for the facade and runner. It preserves text and UTF-16 offsets, prefers paragraph boundaries, and does not call models. Long code blocks or tables may be split; inject another splitter to preserve such blocks as units.
 
 ```ts
 import { StructuralMarkdownSplitter } from "remote-ingestion-retrieval";
@@ -199,17 +150,17 @@ const segments = await splitter.split(markdown, {
   sourceId: "docs",
   documentId: "installation",
   canonicalUrl: "https://docs.example.com/install",
-  documentContentHash: "hash-do-documento",
+  documentContentHash: "document-hash",
 });
 ```
 
-Para reutilizar um splitter que já existe na aplicação, use `ExistingMarkdownSplitterAdapter`, com `split`, `toMarkdown` e, se houver, `toMetadata`.
+Use `ExistingMarkdownSplitterAdapter` to reuse a host splitter through `split`, `toMarkdown`, and optional `toMetadata` functions.
 
-### Divisão semântica compatível com inx-nlp
+### Semantic splitting compatible with inx-nlp
 
-`SemanticMarkdownSplitter` incorpora o contrato `files + metadata` e as regras do projeto MarkdownSplitter e da task `markdown-splitter` do inx-nlp. O executor de modelo/task é injetado pela aplicação; não há SDK ou modelo obrigatório.
+`SemanticMarkdownSplitter` incorporates the `files + metadata` contract and rules used by MarkdownSplitter and the inx-nlp task. The application injects its model/task executor; no SDK or model is mandatory.
 
-O splitter fornece instruções, JSON Schema e contexto de origem ao executor. Ele exige nomes `NN_semantic_domain.md` em sequência, Markdown sem front matter ou fences externos, metadados completos e correspondência exata entre arquivos e manifest. A saída é validada antes de virar chunks ou arquivos de conhecimento.
+The executor receives instructions, JSON Schema, and source context. Output must use sequential `NN_semantic_domain.md` names, Markdown without front matter or outer fences, complete attributes, and a one-to-one file/manifest mapping. Validation happens before indexing.
 
 ```ts
 import {
@@ -217,8 +168,7 @@ import {
   type SemanticMarkdownExecutionRequest,
 } from "remote-ingestion-retrieval";
 
-// runStructuredTask é o executor autenticado da aplicação hospedeira.
-// Ele deve respeitar request.signal e retornar o objeto files+metadata ou seu JSON.
+// Implement/import the authenticated structured-task executor in the host.
 export function createMarkdownSplitter() {
   return new SemanticMarkdownSplitter({
     execute: (request: SemanticMarkdownExecutionRequest) => runStructuredTask(request),
@@ -232,24 +182,22 @@ export function createMarkdownSplitter() {
 }
 ```
 
-Para o runner, salve esse módulo e configure `AUTO_MARKDOWN_SPLITTER_MODULE=./caminho/splitter.ts`. Um arquivo `.ts` é carregado pelo `tsx` já usado em `npm run ingest`. O `runStructuredTask` é uma dependência da aplicação e precisa estar implementado/importado nesse módulo; não é um export desta biblioteca.
+Select this module with `AUTO_MARKDOWN_SPLITTER_MODULE=./path/splitter.ts`. The runner loads TypeScript through `tsx`. `runStructuredTask` must respect `request.signal` and return parsed `files + metadata` or its JSON string; it is a host dependency, not a library export.
 
-A chamada `split(markdown, context)` retorna segmentos para `WebDocumentChunker`. A chamada `files(markdown, context)` retorna `KnowledgeBaseFile[]` para adapters de arquivos. `normalize(markdown, context)` retorna o contrato original:
+`split(markdown, context)` produces chunk segments; `files(markdown, context)` returns `KnowledgeBaseFile[]`; `normalize(markdown, context)` returns the original normalized contract:
 
 ```ts
 const knowledgeBase = await splitter.normalize(markdown, context);
 // { files: [{ filename, markdown }], metadata: [{ filename, attributes }] }
 ```
 
-Os atributos compatíveis são `organization`, `language`, `document_type`, `domain`, `audience`, `kb_namespace`, `source_file`, `source_pages`, `temporal_sensitivity`, `review_required`, `source_effective_date`, `normalized_from`, `normalized_on` e `tags`. Os valores de origem, namespace e data fornecidos ao executor devem voltar intactos. Para fontes web, `normalized_from` aceita `markdown` e `html`, além dos valores PDF usados pelo contrato original.
+Attributes include `organization`, `language`, `document_type`, `domain`, `audience`, `kb_namespace`, `source_file`, `source_pages`, `temporal_sensitivity`, `review_required`, `source_effective_date`, `normalized_from`, `normalized_on`, and `tags`. Supplied provenance, namespace, and date must remain unchanged. `normalized_from` supports `markdown` and `html` in addition to the original PDF values.
 
-A execução preserva o idioma, números, condições, exceções e ambiguidades da fonte. A validação estrutural não prova fidelidade factual de um modelo; `review_required` continua relevante. Alterações semânticas não recebem offsets inventados: o chunker só marca uma posição como resolvida quando há correspondência no texto ou offsets explícitos.
+Instructions preserve source language, facts, numbers, conditions, exceptions, and ambiguity. Structural validation cannot prove model factual fidelity; `review_required` remains relevant. Rewritten content does not receive invented offsets: source positions are resolved only by text matches or explicit offsets. Semantic attributes are retained in `chunk.metadata.splitter.attributes` and projected to vector metadata; pipeline-generated identifiers and hashes take precedence.
 
-Os metadados semânticos são mantidos em `chunk.metadata.splitter.attributes` e projetados para os metadados vetoriais. Os identificadores e hashes gerados pelo pipeline têm precedência sobre atributos do splitter.
+## Incremental precomputed-vector pipeline
 
-## Pipeline incremental com vetores pré-calculados
-
-Use esse caminho quando o host já fornece embeddings ou precisa de reconciliação incremental, inclusive exclusão de chunks antigos. O Weaviate fica configurado com `vectorizer: none`.
+Use this path when the host already supplies embeddings or needs incremental reconciliation, including removal of old chunks. Weaviate uses `vectorizer: none`.
 
 ```ts
 import {
@@ -258,14 +206,13 @@ import {
   WeaviateVectorStore,
 } from "remote-ingestion-retrieval";
 
-// embeddingProvider implementa EmbeddingProvider e pertence à aplicação.
+// embeddingProvider belongs to the host and implements EmbeddingProvider.
 const vectorStore = new WeaviateVectorStore({
   url: process.env.AUTO_VECTOR_STORE_BASE_URL!,
   apiKey: process.env.AUTO_VECTOR_STORE_API_KEY,
   collection: "ProductDocsVectors",
 });
 await vectorStore.ensureCollection();
-
 const ingestion = new RemoteSourceIngestion({
   pipelineRevision: "structural-v1:embedding-model-and-dimensions-v1:metadata-v1",
   markdownSplitter: new StructuralMarkdownSplitter({ maxCharacters: 6400 }),
@@ -273,34 +220,23 @@ const ingestion = new RemoteSourceIngestion({
   vectorStore,
   stateRootDirectory: "./data/sync",
 });
-
 try {
   const now = new Date();
   const outcome = await ingestion.runSourceInsertion({
     source: {
-      id: "product-docs",
-      type: "website",
-      url: "https://docs.example.com/",
-      createdAt: now,
-      updatedAt: now,
-      options: {
-        crawl: {
-          discoveryStrategy: "sitemap-and-crawl",
-          sameOriginOnly: true,
-          maxPages: 100,
-          maxDepth: 3,
-          concurrency: 3,
-        },
-      },
+      id: "product-docs", type: "website", url: "https://docs.example.com/",
+      createdAt: now, updatedAt: now,
+      options: { crawl: {
+        discoveryStrategy: "sitemap-and-crawl", sameOriginOnly: true,
+        maxPages: 100, maxDepth: 3, concurrency: 3,
+      } },
     },
     namespace: "product_docs",
     failurePolicy: "continue-partial",
     materializationConcurrency: 3,
     limits: {
-      maxElapsedMs: 300_000,
-      maxFetchedBytes: 100 * 1024 * 1024,
-      maxChunks: 10_000,
-      maxEmbeddingInputs: 5_000,
+      maxElapsedMs: 300_000, maxFetchedBytes: 100 * 1024 * 1024,
+      maxChunks: 10_000, maxEmbeddingInputs: 5_000,
     },
   });
   if (outcome.ok) console.log(outcome.status, outcome.summary);
@@ -310,13 +246,11 @@ try {
 }
 ```
 
-Para uma única URL, use `source.type: "url"`; os demais campos básicos da fonte são os mesmos. `pipelineRevision` deve mudar quando houver alteração do splitter, modelo, dimensões, pré-processamento ou projeção dos metadados. Preserve o diretório de estado para que a próxima execução possa reconhecer conteúdo inalterado.
+For a single URL, set `source.type: "url"`. Change `pipelineRevision` whenever splitting, model, dimensions, preprocessing, or metadata projection changes. Preserve the state directory to recognize unchanged content.
 
-`insertSource(request)` propaga exceções. `runSourceInsertion(request)` retorna `completed`, `partial`, `failed` ou `aborted`, com `runId`, resumo e erro estruturado quando houver falha. Um snapshot incompleto não autoriza remover documentos que não foram observados.
+`insertSource(request)` throws on failure. `runSourceInsertion(request)` returns `completed`, `partial`, `failed`, or `aborted`, with `runId`, summary, and structured error where applicable. An incomplete snapshot does not authorize deleting unseen documents. Namespace participates in object IDs and filtering, but cluster authorization remains the host's responsibility.
 
-O `namespace` participa dos IDs dos objetos e é persistido como propriedade para filtros. Ele é uma separação lógica; a autorização de acesso ao cluster deve ser configurada pelo host.
-
-## Uso direto do adapter de arquivos
+## Direct file adapter
 
 ```ts
 import { WeaviateKnowledgeBaseAdapter } from "remote-ingestion-retrieval";
@@ -328,10 +262,8 @@ const adapter = new WeaviateKnowledgeBaseAdapter({
   model: "Snowflake/snowflake-arctic-embed-l-v2.0",
   maxChunkCharacters: 6400,
 });
-
 const result = await adapter.ingest({
-  name: "Support knowledge",
-  namespace: "support",
+  name: "Support knowledge", namespace: "support",
   files: [{
     filename: "01_billing.md",
     markdown: "# Billing\n\nPayment instructions from the source.",
@@ -341,35 +273,32 @@ const result = await adapter.ingest({
 console.log(result.storeId, result.objects);
 ```
 
-`domain` é uma propriedade de tokenização `field`, adequada a igualdade exata. `tags` e `keywords` aceitam arrays ou strings separadas por vírgula; o adapter os persiste como arrays. A proveniência completa é conservada em `metadataJson`.
+Weaviate `domain` uses `field` tokenization for exact matching. `tags` and `keywords` accept arrays or comma-separated strings and are persisted as arrays. Full provenance is retained in `metadataJson`.
 
-O `inx-voice-assistant-inxide` consultado usa `/vector_stores/{id}/search` da API OpenAI e filtros exatos por domínio. Uma collection Weaviate não substitui diretamente esse ID. O `WeaviateSearchAdapter` incluído mantém os filtros de namespace/domínio e converte os objetos em resultados com texto e proveniência; o host precisa selecionar esse adapter no caminho de busca. Os serviços inx não são alterados por esta biblioteca.
+The referenced inx voice service uses the OpenAI `/vector_stores/{id}/search` API. A Weaviate collection is not a drop-in replacement for that ID. The included `WeaviateSearchAdapter` provides scoped results; the host must route its search through that adapter. This library does not modify inx services.
 
-## Upload de arquivos existentes ao Weaviate
+## Upload existing files
 
-Para enviar Markdown/texto já salvo, sem repetir o crawl, configure `AUTO_VECTOR_STORE_BASE_URL`, `AUTO_VECTOR_STORE_COLLECTION` e a chave do cluster em `.env`:
-
-```bash
-npm run upload:weaviate -- --namespace support --domain billing ./kb/01_billing.md
-```
-
-Também é possível reutilizar os arquivos e metadados de um manifest gerado pelo runner:
+To upload saved Markdown/text without crawling again:
 
 ```bash
-npm run upload:weaviate -- --namespace support --manifest ./kb/source/split/run/manifest.json
+npm run upload:vector-store -- --namespace support --domain billing ./file.md
+npm run upload:vector-store -- --namespace support --manifest ./kb/source/split/run/manifest.json
 ```
 
-O manifest deve conter `files: [{ filename, metadata }]`; cada arquivo fica ao lado dele. A seleção por caminhos aceita `.md`, `.markdown` e `.txt` UTF-8. Os limites padrão são 100 arquivos, 5 MiB por arquivo e 50 MiB no total, ajustáveis por `AUTO_MAX_KB_FILES`, `AUTO_MAX_BYTES_PER_DOCUMENT` e `AUTO_MAX_KB_BYTES`. O adapter também limita a 10.000 chunks antes de chamar embeddings, configuráveis por `AUTO_VECTOR_STORE_MAX_CHUNKS` ou `maxChunks` no construtor. `--report` escolhe o caminho do relatório; o padrão é `data/weaviate-uploads/<id>.json`.
+`upload:weaviate` remains a legacy command that explicitly selects Weaviate. Its reports retain the `data/weaviate-uploads/<id>.json` directory. Generic upload reports use `data/vector-store-uploads/<provider>/`.
 
-Na API, use `adapter.ingestFiles({ name, namespace, files: [{ path, filename?, metadata? }], signal? })`, ou `loadKnowledgeBaseFiles()` para carregar os arquivos antes de chamar outro adapter. PDFs e outros formatos binários precisam passar pela aquisição/conversão antes desse upload.
+A manifest contains `files: [{ filename, metadata }]`; each file is next to it. Supported local formats are UTF-8 `.md`, `.markdown`, and `.txt`. Defaults are 100 input documents, 5 MiB per file for standalone upload when no override is set, and 50 MiB total. Configure `AUTO_MAX_KB_FILES`, `AUTO_MAX_BYTES_PER_DOCUMENT`, and `AUTO_MAX_KB_BYTES`; `--report` selects the report path. The adapter additionally limits chunks to 10000 through `AUTO_VECTOR_STORE_MAX_CHUNKS` or `maxChunks`.
 
-No Weaviate, o conteúdo dos arquivos é importado como objetos com texto e metadados; o vectorizer gera os embeddings durante a gravação. Depois dos lotes, o adapter lê cada objeto com seu vetor, confere texto/proveniência e exige vetores não vazios, finitos e com dimensões consistentes. O resultado contém IDs reais dos chunks por arquivo, hashes, bytes e o resumo `verification`. Somente após essa conferência o upload é considerado concluído. `AUTO_VECTOR_STORE_VERIFICATION_ATTEMPTS` (3, entre 1 e 10) e `AUTO_VECTOR_STORE_VERIFICATION_DELAY_MS` (250) controlam as tentativas.
+Use `adapter.ingestFiles({ name, namespace, files: [{ path, filename?, metadata? }], signal? })` or `loadKnowledgeBaseFiles()` in the API. Convert PDFs and other binary formats before upload.
 
-O relatório do runner conserva `files` para os documentos originais e `splitFiles`, `objects` e `splitManifestPath` para os arquivos efetivamente enviados e os objetos persistidos. Assim, a mudança de nomes causada pelo splitter não é tratada como falha de upload.
+After import, Weaviate reads every object and vector, checks text/provenance, and requires nonempty finite vectors with consistent dimensions. Results include real chunk IDs, hashes, bytes, and `verification`. Attempts and delay are controlled by `AUTO_VECTOR_STORE_VERIFICATION_ATTEMPTS` and `AUTO_VECTOR_STORE_VERIFICATION_DELAY_MS`.
 
-## Busca Weaviate para consumidores inx
+Runner reports retain original documents in `files`; actual split files and objects are in `splitFiles`, `objects`, and `splitManifestPath`.
 
-`WeaviateSearchAdapter` consulta pelo SDK oficial/gRPC e devolve `{ data, has_more: false }`. Cada resultado contém `file_id`, `filename`, `score`, `distance`, `attributes` e `content: [{ type: "text", text }]`.
+## Weaviate search for inx consumers
+
+`WeaviateSearchAdapter` uses the official SDK/gRPC and returns `{ data, has_more: false }`. Results contain `file_id`, `filename`, `score`, `distance`, `attributes`, and `content: [{ type: "text", text }]`.
 
 ```ts
 import weaviate from "weaviate-client";
@@ -378,17 +307,13 @@ import { connectWeaviateSearch } from "remote-ingestion-retrieval";
 const search = await connectWeaviateSearch({
   collection: "SupportKnowledge",
   connection: {
-    mode: "cloud",
-    url: process.env.AUTO_VECTOR_STORE_BASE_URL!,
+    mode: "cloud", url: process.env.AUTO_VECTOR_STORE_BASE_URL!,
     options: { authCredentials: new weaviate.ApiKey(process.env.AUTO_VECTOR_STORE_API_KEY!) },
   },
 });
 try {
   const results = await search.search({
-    query: "Como pagar a fatura?",
-    namespace: "support",
-    domain: "billing",
-    limit: 5,
+    query: "How can I pay the invoice?", namespace: "support", domain: "billing", limit: 5,
   });
   console.log(results.data);
 } finally {
@@ -396,13 +321,13 @@ try {
 }
 ```
 
-O namespace é obrigatório; domínio é um filtro opcional de igualdade exata. A busca usa `nearText` para vetorização nativa. Para collections de vetores pré-calculados, injete o mesmo `EmbeddingProvider` da ingestão para usar `nearVector`. Conexões próprias e portas HTTP/gRPC são configuráveis por `connection: { mode: "custom", options }`; um client já existente pode ser injetado diretamente no construtor.
+Namespace is required; domain is an optional exact filter. Native collections use `nearText`; inject the ingestion `EmbeddingProvider` for BYOV collections and `nearVector`. Custom HTTP/gRPC connections use `connection: { mode: "custom", options }`; an existing client can also be injected.
 
-`score` é a distância vetorial negativa: maior é melhor, e não representa uma probabilidade nem a escala de scores da OpenAI. Ajuste eventuais thresholds no consumidor. A integração fornece o adapter e o formato de resultados; o roteamento do serviço inx para esse adapter continua sendo configuração/integração do host. O SDK/gRPC evita depender de [GraphQL descontinuado ou da REST Search em preview](https://docs.weaviate.io/weaviate/api/graphql/migration).
+The score is negative vector distance: larger is better, but it is not a probability or an OpenAI-calibrated score. Adjust consumer thresholds. The host still needs to select this adapter. SDK/gRPC avoids [deprecated GraphQL and preview REST Search](https://docs.weaviate.io/weaviate/api/graphql/migration).
 
-## Aquisição de repositórios GitHub
+## GitHub repository acquisition
 
-O runner reconhece URLs de repositório, `/tree/` e `/blob/` do GitHub e escolhe a aquisição de arquivos automaticamente. Para selecionar explicitamente, use `SOURCE_PROFILE=github-repository`; `SOURCE_PROFILE=website` força o crawler convencional.
+The runner automatically recognizes repository, `/tree/`, and `/blob/` URLs. `SOURCE_PROFILE=github-repository` selects the profile explicitly; `SOURCE_PROFILE=website` forces ordinary website crawling.
 
 ```dotenv
 SOURCE_URL=https://github.com/qdrant/qdrant
@@ -414,9 +339,9 @@ GITHUB_MAX_FILES=100
 GITHUB_MAX_API_REQUESTS=200
 ```
 
-Execute `npm run ingest` com o adapter de destino configurado. A entrada não consulta sitemap nem páginas sociais do GitHub. A referência é resolvida para um commit no início; a árvore desse commit produz os candidatos. Os downloads usam blobs brutos pelo SHA, com conferência do hash Git e do tamanho. A ordem favorece README da raiz, documentação, referências de API e exemplos. Não executa código nem segue links da interface ou links externos.
+Run `npm run ingest` with the destination adapter configured. No sitemap or social pages are consulted. A reference is pinned to a commit at the start, and its tree supplies candidates. Raw blobs are fetched by SHA and verified against Git hash and size. Priority goes to the root README, documentation, API references, and examples. Repository code is never executed; external/interface links are not followed.
 
-No uso como biblioteca, a seleção é explícita na fonte:
+Library selection is explicit:
 
 ```ts
 const source = {
@@ -429,26 +354,24 @@ const source = {
     crawl: { maxPages: 100, concurrency: 3 },
   },
 };
-// Passe githubToken nas opções de RemoteSourceIngestion, fora dos metadados da fonte.
+// Pass githubToken to RemoteSourceIngestion options, outside source metadata.
 ```
 
-Use uma referência e um caminho que existam no repositório selecionado. `GITHUB_REF` e `GITHUB_PATH` permitem definir esse escopo no runner. Sem referência, usa a branch padrão. Referências com barras em URLs tree/blob são resolvidas pela API, sem assumir que apenas o primeiro segmento seja a branch.
+Choose a reference/path that exists. Runner equivalents are `GITHUB_REF` and `GITHUB_PATH`. Without a reference, the default branch is used. References containing slashes are resolved through the API.
 
-`GITHUB_INCLUDE` e `GITHUB_EXCLUDE` aceitam listas de globs de caminhos relativos ao repositório, separadas por vírgula, como `docs/**,README.md`. Código-fonte exige `GITHUB_INCLUDE_CODE=true`. Arquivos binários, lockfiles, gerados, dependências, submódulos e symlinks ficam excluídos. Ponteiros Git LFS e conteúdos binários inesperados geram falha de materialização, sem indexar o ponteiro como documento.
+`GITHUB_INCLUDE` and `GITHUB_EXCLUDE` are comma-separated repository-relative globs, such as `docs/**,README.md`. Source code requires `GITHUB_INCLUDE_CODE=true`. Binaries, lockfiles, generated files, dependencies, submodules, and symlinks are excluded. Unexpected binary content and Git LFS pointers fail materialization rather than being indexed as content.
 
-Os limites são `GITHUB_MAX_FILES` (100), `GITHUB_MAX_FILE_BYTES` (5 MiB), `GITHUB_MAX_API_REQUESTS` (200, contando enumeração e reservando os downloads), `GITHUB_MAX_API_RESPONSE_BYTES` (16 MiB por resposta) e `GITHUB_MAX_TREE_ENTRIES` (100.000). O limite de páginas da fonte também restringe os arquivos. Para repositórios privados, use um token com permissão de leitura de Contents; ele só vai para `api.github.com`, sem redirects, e não é persistido nos metadados. Sem token, aplicam-se os limites públicos da API GitHub.
+Defaults are 100 files, 5 MiB per file, 200 API requests including reserved downloads, 16 MiB per enumeration response, and 100000 tree entries. They are configurable through `GITHUB_MAX_*`; the source page cap also limits files. A token with Contents read permission is required for private repositories, optional for public ones. It is sent only to `api.github.com`, without redirects, and is not persisted in metadata.
 
-Árvores recursivas truncadas acionam enumeração de subárvores. Se ainda houver truncamento ou esgotamento de orçamento, o snapshot fica parcial. O relatório registra commit, escopo, candidatos elegíveis, selecionados, pendentes, chamadas e amostras dos caminhos ignorados com os motivos. Os documentos carregam `{ owner, repo, ref, commitSha, path, blobSha }`; a identidade usa referência/caminho estáveis entre commits, enquanto a aquisição usa o blob fixado. As proteções existentes de DNS, bytes, tempo e cancelamento também se aplicam à API GitHub.
-
-Snapshots parciais não autorizam apagar documentos não observados na sincronização incremental. A mesma proteção agora trata o limite de páginas de websites convencionais de forma conservadora.
+Truncated recursive trees trigger subtree enumeration. Remaining truncation or exhausted budgets produce a partial snapshot. Reports record commit, scope, eligible/selected/pending files, requests, and ignored-path samples with reasons. Documents retain `{ owner, repo, ref, commitSha, path, blobSha }`. Identity uses a stable reference/path between commits; acquisition uses the pinned blob. DNS, byte, time, and cancellation controls remain active. Partial snapshots never authorize deleting unseen documents.
 
 ## Qdrant
 
-`npm run ingest` realiza o upload automaticamente após descoberta, materialização, metadados e divisão, tanto para Weaviate quanto para Qdrant. Não é necessário executar um segundo comando de upload após uma ingestão concluída. Limites ou falhas anteriores podem impedir essa etapa; confira o status e o resultado de Vector Store no relatório.
+`npm run ingest` uploads automatically after discovery, materialization, metadata, and splitting. No second upload command is needed after successful ingestion. Check reports for failures or budget limits that prevented upload.
 
-O suporte inclui `QdrantVectorStore`, `QdrantKnowledgeBaseAdapter` e `QdrantSearchAdapter`. Usa REST com autenticação `api-key`, timeout/cancelamento, UUIDs determinísticos por namespace e operações de gravação com `wait=true`. Não há upload fictício para uma API Files: os arquivos são divididos localmente e importados como pontos com texto, payload e vetor.
+Qdrant support includes `QdrantVectorStore`, `QdrantKnowledgeBaseAdapter`, and `QdrantSearchAdapter`. REST requests use `api-key`, timeout/cancellation, namespace-scoped deterministic UUIDs, and `wait=true` writes. Files become points containing text, payload, and vectors, rather than fictitious Files API uploads.
 
-Para Cloud Inference, habilite o recurso no cluster e copie o **modelo e as dimensões exatos** da aba Inference do painel. O adapter não presume esses valores. O fluxo segue a [documentação oficial do Qdrant Cloud Inference](https://qdrant.tech/documentation/inference/cloud-inference/).
+Enable Cloud Inference and copy the exact model/dimensions from the cluster's Inference tab. The adapter does not guess them. See [official Qdrant Cloud Inference documentation](https://qdrant.tech/documentation/inference/cloud-inference/).
 
 ```dotenv
 AUTO_VECTOR_STORE_PROVIDER=qdrant
@@ -461,102 +384,92 @@ AUTO_EMBEDDING_DIMENSIONS=384
 QDRANT_DISTANCE=Cosine
 ```
 
-`384` é apenas um exemplo: substitua-o pelas dimensões do modelo selecionado. Depois, use os mesmos comandos de ingestão e upload:
+Replace the example `384` with the selected model's dimensions. Use the same ingestion/upload commands shown above.
 
-```bash
-npm run ingest
-npm run upload:vector-store -- --namespace support --domain billing ./arquivo.md
-npm run upload:vector-store -- --namespace support --manifest ./kb/source/split/run/manifest.json
-```
-
-O upload genérico grava relatórios em `data/vector-store-uploads/<provider>/`. O comando legado `upload:weaviate` continua disponível e seleciona Weaviate explicitamente, preservando seu diretório de relatórios anterior.
-
-O provisionamento verifica collection com um único vetor denso sem nome e dimensões/distância compatíveis; cria índices `keyword` para namespace e domínio quando ausentes. O readback confere payload, texto, IDs e vetores antes de retornar sucesso. A busca exige namespace, aceita domínio, limite e `scoreThreshold` e retorna o score nativo do Qdrant, cuja interpretação depende da distância configurada.
+Provisioning requires one unnamed dense vector with matching dimensions/distance and creates keyword indexes for namespace/domain where missing. Readback verifies payload, text, IDs, and vectors before success. Search requires namespace and supports domain, limit, and `scoreThreshold`; native scores depend on the collection metric.
 
 ```ts
 import { QdrantSearchAdapter, resolveVectorStoreProviderConfiguration } from "remote-ingestion-retrieval";
 
 const configuration = resolveVectorStoreProviderConfiguration();
 const search = new QdrantSearchAdapter({
-  url: configuration.baseUrl!,
-  apiKey: configuration.apiKey,
+  url: configuration.baseUrl!, apiKey: configuration.apiKey,
   collection: configuration.collection!,
-  model: configuration.embedding.model,
-  dimensions: configuration.embedding.dimensions!,
+  model: configuration.embedding.model, dimensions: configuration.embedding.dimensions!,
 });
-const results = await search.search({ query: "Como pagar?", namespace: "support", domain: "billing", limit: 5 });
+const results = await search.search({ query: "How can I pay?", namespace: "support", domain: "billing", limit: 5 });
 ```
 
-Para Qdrant instalado localmente ou um modelo executado pelo host, use `AUTO_EMBEDDING_MODE=provided` e `AUTO_EMBEDDING_PROVIDER_MODULE=./embedding-provider.ts`. O módulo implementa o contrato `EmbeddingProvider` já usado pela biblioteca e recebe somente a configuração de embeddings, sem a chave do banco. Também pode ser injetado pela aplicação:
+For self-hosted Qdrant or host-executed models, select `AUTO_EMBEDDING_MODE=provided` and `AUTO_EMBEDDING_PROVIDER_MODULE=./embedding-provider.ts`. The module implements `EmbeddingProvider` and receives embedding configuration without the database key. Direct injection is also supported:
 
 ```ts
 const adapter = await createKnowledgeBaseVectorStoreAdapter(configuration, { embeddingProvider });
 ```
 
-Nesse caso, `configuration.embedding.mode` deve ser `provided`. As dimensões vêm da configuração ou de `embeddingProvider.dimensions`, e precisam coincidir com a collection. Use o mesmo provider para consultas, passando-o a `QdrantSearchAdapter`. Para Weaviate com embeddings fornecidos pelo host, o caminho continua sendo `WeaviateVectorStore` com a fachada incremental; seu adapter de arquivos usa vetorização nativa.
+The mode must be `provided`; dimensions come from configuration or `embeddingProvider.dimensions` and must match the collection. Use the same provider for search. Host-provided Weaviate embeddings use the incremental facade with `WeaviateVectorStore`, rather than its native file adapter.
 
-A factory `createPrecomputedVectorStore(configuration)` cria o armazenamento Weaviate/Qdrant para o pipeline incremental. Chame `ensureCollection()` antes do primeiro uso. O adapter de arquivos faz upsert de snapshots e não remove chunks antigos de arquivos alterados; a reconciliação de remoções usa o pipeline incremental. Mudar modelo/dimensões exige configurar uma collection compatível e atualizar `pipelineRevision`.
+`createPrecomputedVectorStore(configuration)` constructs Weaviate/Qdrant storage for incremental ingestion. Call `ensureCollection()` before first use. File imports upsert snapshots without removing stale chunks; incremental reconciliation handles deletion. Model/dimension changes require a compatible collection and updated `pipelineRevision`.
 
-O limite do splitter é medido em caracteres, não tokens. Ajuste-o à janela do modelo: o Cloud Inference pode truncar textos maiores. Collections com vetores nomeados, sparse/multivector e busca híbrida não fazem parte deste adapter denso.
+Character limits are not token guarantees. Adjust splitting to the model window: Cloud Inference may truncate oversized text. Named vectors, sparse/multivectors, and hybrid search are outside this dense-vector adapter.
 
-## Retomar somente o upload após uma falha
+## Resume only the upload after failure
 
-`AUTO_MAX_KB_FILES` limita documentos de origem; `AUTO_MAX_SPLIT_FILES` limita os arquivos produzidos pela divisão. Os padrões são, respectivamente, 100 e 10000. Um crawl de 97 páginas pode gerar mais de 100 segmentos sem exceder o limite de documentos. `AUTO_MAX_KB_BYTES` continua sendo um teto separado de bytes e também é conferido após a divisão.
+`AUTO_MAX_KB_FILES` limits source documents; `AUTO_MAX_SPLIT_FILES` limits generated files. Defaults are 100 and 10000. For example, 97 pages can produce more than 100 segments without exceeding the source-document limit. `AUTO_MAX_KB_BYTES` is independent and checked after splitting too.
 
-Quando os documentos e seus metadados já estão salvos, reenvie-os pelo relatório de ingestão:
+When documents and metadata are already saved:
 
 ```bash
-npm run upload:vector-store -- --ingestion-report ./data/ingestion-results/weaviateacademy/744e47aa-741b-4a38-bd87-fbfebdea4895.json
+npm run upload:vector-store -- --ingestion-report ./data/ingestion-results/source/run.json
 ```
 
-Esse comando não repete descoberta, materialização nem enriquecimento. Ele verifica os hashes dos arquivos salvos, reaplica o splitter configurado e faz o upload ao provider selecionado no ambiente atual. Os três documentos que falharam na materialização original continuam registrados apenas no relatório original; o reenvio cobre os documentos que foram salvos com sucesso.
+This does not repeat discovery, materialization, or enrichment. It verifies saved hashes, reapplies the configured splitter, and uploads to the currently selected provider. Original materialization failures remain in the original report; only successfully saved documents are uploaded.
 
-Relatórios que já contêm um resultado de Vector Store são recusados para evitar repetir automaticamente um upload concluído. O novo relatório aponta para o original e para o manifest dos arquivos preparados. Para reutilizar um manifest de divisão, use `--manifest`; manifests com `splitter` informado não passam novamente pela divisão e são limitados por `AUTO_MAX_SPLIT_FILES`. Os documentos originais e o relatório anterior permanecem intactos.
+Reports already containing a Vector Store result or remote-resource progress are rejected to prevent automatic duplicate uploads. Inspect existing resources/checkpoints before retrying. The new report references the original and prepared-file manifest. With `--manifest`, files with a declared `splitter` are not split again and are bounded by `AUTO_MAX_SPLIT_FILES`. Original documents/reports remain intact.
 
-## APIs e extensão
+## APIs and extension
 
-Além da fachada, estão disponíveis `discoverWebsite()`, `materializeUrl()`, `chunkDocument()`, `ingestWebsite()`, `ingestUrl()` e `close()`. Os serviços avançados podem ser importados por `remote-ingestion-retrieval/advanced`.
+Additional facade methods include `discoverWebsite()`, `materializeUrl()`, `chunkDocument()`, `ingestWebsite()`, `ingestUrl()`, and `close()`. Advanced services are available through `remote-ingestion-retrieval/advanced`.
 
-A aquisição mantém as proteções de URL, DNS e redirects, limites de bytes/tempo e cancelamento. PDF depende de um `PdfMarkdownProcessor` fornecido pelo host. Markdown e metadados permanecem a fronteira entre aquisição e processamento downstream.
+Acquisition retains URL, DNS, redirect, byte/time, and cancellation protections. PDF requires a host-supplied `PdfMarkdownProcessor`. Markdown plus metadata remains the acquisition/downstream boundary.
 
-As estratégias para repositórios GitHub e deduplicação estão em [Estratégias de descoberta e deduplicação](docs/ingestion-strategies.md), com as evidências dos casos `githubqdrant` e `giassi`, contenções disponíveis e propostas de implementação.
+See [Discovery and deduplication strategies](docs/ingestion-strategies.md) for the `githubqdrant` and `giassi` evidence, available controls, and deduplication proposals. That strategy document is in Portuguese.
 
-## Validação local
+## Local validation
 
-O adapter OpenAI associa os arquivos em pedidos individuais, com concorrência limitada por `AUTO_UPLOAD_CONCURRENCY` (padrão 4), enviando `attributes` e `chunking_strategy` no mesmo pedido. Depois lê todos os arquivos e confere os valores persistidos; um retorno `0/0` não é aceito como sucesso. `ingest` e `upload:vector-store` encaminham as mesmas opções de tokens e concorrência. IDs remotos são registrados durante a operação em `<relatório>.progress.json` e em `providerProgress`, mesmo se a verificação posterior falhar. Antes de reenviar uma execução que já criou recursos, consulte esse checkpoint; uma nova tentativa pode criar outro store no OpenAI.
+The OpenAI adapter attaches files through individual requests with concurrency bounded by `AUTO_UPLOAD_CONCURRENCY` (default 4), sending `attributes` and `chunking_strategy` together, then reads every file to verify persisted values. `0/0` is not accepted as success. Both runners forward token/concurrency options. Remote IDs are checkpointed during ingestion in `<report>.progress.json` and `providerProgress`, even if later verification fails. Inspect checkpoints before resending; another attempt can create another OpenAI store.
 
 ```bash
 npm run typecheck
 npm run build
 ```
 
-Esses comandos verificam tipos e compilação. Não executam ingestão, geração de embeddings, gravação em collections ou busca real no provider.
+These commands check types and compilation. They do not execute ingestion, generate embeddings, write collections, or perform live provider searches.
 
 
-## Retomar um upload que já criou recursos remotos
+## Resume an upload that already created remote resources
 
-Se um upload foi interrompido depois de criar o Vector Store ou enviar arquivos, use `--resume-upload-report` com o relatório do upload. Esse fluxo reutiliza o mesmo store e todos os 195 arquivos já enviados na execução de exemplo, verifica primeiro os arquivos associados e associa somente os pendentes. Não repete upload dos arquivos, crawl, enriquecimento de metadados nem splitter.
+If an upload stopped after creating a Vector Store or uploading files, use `--resume-upload-report` with the upload report. This flow reuses the same store and all 195 files already uploaded in the example run, validates attached files first, and attaches only pending files. It does not repeat file uploads, crawling, metadata enrichment, or splitting.
 
 ```bash
 AUTO_UPLOAD_MAX_ELAPSED_MS=3600000 AUTO_UPLOAD_CONCURRENCY=4 npm run upload:vector-store -- --resume-upload-report ./data/vector-store-uploads/openai-compatible/6dbbd497-6cf8-426a-90a2-c301305aad6f.json
 ```
 
-`AUTO_UPLOAD_CONCURRENCY` (padrão 4) limita tanto o upload à Files API quanto as associações individuais; não usa o endpoint de batch. A conferência estrita dos metadados e do chunking estático de cada arquivo permanece ativa.
+`AUTO_UPLOAD_CONCURRENCY` (default 4) bounds both Files API uploads and individual file-attachment requests; it does not use the batch endpoint. Strict per-file metadata and static chunking readback remains enabled.
 
-`AUTO_UPLOAD_MAX_ELAPSED_MS` controla o prazo do upload isolado e da retomada. A precedência é: valor específico do upload, depois `AUTO_MAX_ELAPSED_MS` quando definido, depois 3600000 ms quando ambos estão ausentes. O prazo global de `npm run ingest` continua sendo 600000 ms por padrão. Um `AUTO_MAX_ELAPSED_MS=600000` sem a opção específica limita o upload isolado a dez minutos; o comando acima define uma hora explicitamente.
+`AUTO_UPLOAD_MAX_ELAPSED_MS` sets the standalone upload/resume deadline. Precedence is: the upload-specific value, then `AUTO_MAX_ELAPSED_MS` when defined, then 3600000 ms when both are absent. The default global deadline for `npm run ingest` remains 600000 ms. Setting only `AUTO_MAX_ELAPSED_MS=600000` also limits standalone upload to ten minutes; the command above explicitly allows one hour.
 
-A retomada é uma capacidade implementada; esta documentação não afirma que uma nova execução remota tenha sido validada.
+Resume is an implemented capability; this documentation does not claim that a new remote run has been validated.
 
 
-### Reparar associações OpenAI inválidas durante a retomada
+### Repair invalid OpenAI associations during resume
 
-A verificação OpenAI repete a leitura conforme `AUTO_VECTOR_STORE_VERIFICATION_ATTEMPTS` (padrão 3) e `AUTO_VECTOR_STORE_VERIFICATION_DELAY_MS` (padrão 250 ms), mantendo a conferência estrita de metadados e chunking. Um retorno `0/0` continua sendo erro. A retomada verifica as associações existentes; sem a opção abaixo, informa quais estão inválidas e interrompe, sem alterá-las.
+OpenAI readback retries follow `AUTO_VECTOR_STORE_VERIFICATION_ATTEMPTS` (default 3) and `AUTO_VECTOR_STORE_VERIFICATION_DELAY_MS` (default 250 ms), while metadata and static chunking checks remain strict. A `0/0` response is still an error. Resume checks existing associations; without the option below, it reports invalid entries and stops without modifying them.
 
 ```bash
 AUTO_UPLOAD_MAX_ELAPSED_MS=3600000 AUTO_UPLOAD_CONCURRENCY=8 npm run upload:vector-store -- --resume-upload-report ./data/vector-store-uploads/openai-compatible/187756d1-f130-476e-9987-ddbf0b026359.json --repair-invalid-associations
 ```
 
-`--repair-invalid-associations` só pode ser usado com `--resume-upload-report` e autoriza remover e recriar apenas as associações inválidas ao mesmo Vector Store, com o mesmo File ID, atributos e estratégia solicitada. Não apaga o recurso da Files API, não cria outro store nem repete o upload. Associações válidas permanecem intactas. O reparo pode retirar temporariamente o arquivo afetado da busca enquanto sua associação é reprocessada.
+`--repair-invalid-associations` is allowed only with `--resume-upload-report`. It explicitly permits detaching and recreating only invalid associations in the same Vector Store, using the same File ID, attributes, and requested strategy. It does not delete the Files API resource, create a new store, or upload files again. Valid associations remain untouched. The affected file may temporarily leave search results while its association is reprocessed.
 
 Primeiro o comando repara uma única associação e verifica integralmente o resultado. Só depois desse primeiro reparo confirmado processa as demais, com concorrência limitada; se ele falhar, as restantes não são alteradas. Falhas de processamento e erros inesperados não são tratados como autorização para um reparo indiscriminado. Esta opção não reduz a validação nem aceita chunking nativo `0/0` como sucesso.
 
@@ -565,3 +478,4 @@ Primeiro o comando repara uma única associação e verifica integralmente o res
 O código e a documentação originais deste projeto são distribuídos sob a [Licença MIT](LICENSE), com uso comercial, modificação e redistribuição permitidos mediante a preservação dos avisos de copyright e licença aplicáveis. Dependências, conteúdo de terceiros e materiais externos mantêm suas próprias licenças.
 
 Melhorias podem ser propostas por pull requests. A incorporação ao projeto original depende de análise e aceitação dos mantenedores; não é automática. Não se exige citação acadêmica em cada utilização ou produto derivado.
+The command repairs one association first and fully verifies that canary. Only after it passes does bounded concurrent repair of the remaining entries begin; a failed canary stops before the others are changed. Processing failures and unexpected errors are not blindly repaired. This option does not weaken validation or accept native `0/0` chunking as success.

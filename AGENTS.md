@@ -43,3 +43,22 @@ For nontrivial work, apply the matching project skill before implementation:
 - [Remote acquisition and extraction](.agents/skills/remote-source-acquisition/SKILL.md)
 - [Website discovery and crawling](.agents/skills/remote-website-discovery/SKILL.md)
 - [Source insertion and incremental sync](.agents/skills/remote-source-sync-pipeline/SKILL.md)
+
+## Knowledge Pipeline Explorer (static public showroom)
+
+The interactive learning site is owned by `showcase/` and does **not** implement the production data pipeline. Use the [Knowledge Pipeline Explorer skill](.agents/skills/knowledge-pipeline-showroom/SKILL.md) for UI, educational fixture, SEO, or Pages tasks.
+
+The six stages present the existing source/discovery/acquisition/normalization/chunking/vector/sync/search boundaries, but all documents are intentionally authored fictional examples. Their eight-character display fingerprints are not real production SHA-256 hashes; their lexical query overlap is not embedding-based retrieval. Never describe any demo result as actual Qdrant/Weaviate indexing, a quality benchmark, real network retrieval, or a successful hosted model call.
+
+Maintain the two downstream paths separately: `EmbeddingProvider` + `VectorStore` for precomputed vectors and `KnowledgeBaseVectorStoreAdapter` for file-oriented ingestion. Keep partial snapshot deletion constraints visible. Do not allow the public demo to accept arbitrary URLs, secrets, credentials, files, or external vector connections without a new explicit security review.
+
+The project currently has no root LICENSE file and the package is `private: true`; do not invent license rights or npm distribution claims. Site publication is a **manual-only** GitHub Pages workflow with SHA-pinned official Actions. Do not start a workflow, merge the branch, or publish an npm package without maintainer authorization.
+
+Standalone validation:
+```sh
+node --check showcase/demo-data.mjs
+node --check showcase/pipeline-model.mjs
+node --check showcase/studio.mjs
+node --test showcase/tests/*.test.mjs
+```
+Report whether checks were actually executed versus only inspected; visual and provider-level integration checks are separate.

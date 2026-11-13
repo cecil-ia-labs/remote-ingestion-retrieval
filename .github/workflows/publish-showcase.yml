@@ -1,0 +1,47 @@
+name: Publish Knowledge Pipeline Explorer (manual)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: remote-ingestion-showroom-pages
+  cancel-in-progress: true
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: "22"
+      - name: Verify static educational showroom
+        run: |
+          node --check showcase/demo-data.mjs
+          node --check showcase/pipeline-model.mjs
+          node --check showcase/studio.mjs
+          node --test showcase/tests/*.test.mjs
+      - name: Stage GitHub Pages artifact
+        run: |
+          mkdir -p _site
+          cp showcase/index.html showcase/studio.css showcase/studio.mjs showcase/demo-data.mjs showcase/pipeline-model.mjs showcase/robots.txt showcase/sitemap.xml _site/
+          touch _site/.nojekyll
+      - name: Configure Pages
+        uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b
+      - name: Upload static site
+        uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b
+        with:
+          path: _site
+      - name: Deploy Pages
+        id: deployment
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e
